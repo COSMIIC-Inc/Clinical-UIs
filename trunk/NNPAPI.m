@@ -1,0 +1,1070 @@
+classdef NNPAPI < handle
+    %NNPAPI Interface to the NNP via the AccessPoint
+    %
+    % JML 20180321
+    
+    properties (Access = private)
+        cancelRead = false;
+    end
+    
+    properties (Access = public)
+        port = [];     %Serial Port used by Access Point
+        RSSI = 0;     %Received Signal Strength Indication for last received radio mesage
+        LQI = 0;      %Link Quality Indication for last received radio mesage
+        verbose = 0;   %0:no text, 1:warnings only, 2:all radio messages 
+        timeout = 0.5; %timeout for response from serial port
+        % Note: 
+        % 1. A weak signal in the presence of noise may give low RSSI and high LQI.
+        % 2. A weak signal in "total" absence of noise may give low RSSI and low LQI.
+        % 3. Strong noise (usually coming from an interferer) may give high RSSI and high LQI.
+        % 4. A strong signal without much noise may give high RSSI and low LQI.
+        % 5. A very strong signal that causes the receiver to saturate may give high RSSI and high LQI.
+    end
+    
+    methods
+        function NNP = NNPAPI(port)                
+        % NNPAPI - (constructor) Opens port for Access Point
+        % if no port is provided, a selection menu lets user select port
+        
+            if nargin == 0
+                serialInfo = instrhwinfo('serial');
+                if isempty(serialInfo.SerialPorts)
+                    msgbox('No Serial Ports Found','NNPAPI','error')
+                    return
+                elseif length(serialInfo.SerialPorts) == 1
+                    port = serialInfo.SerialPorts(1);
+                    msgbox(['Connecting on: ' port],'NNPAPI','info')
+                else
+                    user = listdlg('ListString',serialInfo.SerialPorts,'SelectionMode', 'single', ...
+                        'OKstring', 'Open', 'PromptString', {'Select port for'; 'NNP Access Point'});
+                    if isempty(user)
+                        return
+                    else
+                        port = serialInfo.SerialPorts(user);
+                    end
+                end
+            end
+                
+            NNP.port = serial(port, 'BaudRate', 115200);
+            try
+                fopen(NNP.port);
+            catch
+                msgbox(['Could not open port: ' port],'NNPAPI','error')
+                NNP.port = [];
+            end
+            NNP.RSSI = [];
+            NNP.LQI = [];
+        end
+        
+        
+        function delete(NNP) 
+        % DELETE (destructor) Closes and removes open port handle
+            try
+                if ~isempty(NNP.port)
+                    if isvalid(NNP.port)
+                        fclose(NNP.port);
+                        delete(NNP.port);
+                    else
+                        disp('no port to close')
+                    end
+                end
+            catch
+                disp('no port to close')
+            end
+        end
+        
+      
+        function flushInput(NNP)
+        % FLUSHINPUT - Clears any bytes available in the port buffer
+            if NNP.port.BytesAvailable
+                buf = fread(NNP.port, NNP.port.BytesAvailable);
+                if NNP.verbose > 0
+                    warning(['Flush Input clearing: ' num2str(buf')]);
+                end
+            end
+        end
+        
+        %% Access Point Radio Settings 
+        
+        function settings = getRadioSettings(NNP)
+        % GETRADIOSETTINGS - Reads AccessPoint Radio Settings
+            settings = []; %initialize output
+            
+            NNP.flushInput();
+            
+            fwrite(NNP.port, uint8([255 73 3]), 'uint8');
+            
+            t = tic;
+            while NNP.port.BytesAvailable < 10 && toc(t)< NNP.timeout
+                %delay loop
+            end
+            if NNP.port.BytesAvailable 
+                resp = fread(NNP.port, NNP.port.BytesAvailable, 'uint8');
+                if resp(1)==255 && length(resp)==resp(3) && length(resp)==10 && resp(2) == 6
+                    settings.addrAP  = resp(4);
+                    settings.addrPM  = resp(5);
+                    settings.chan    = resp(6);
+                    settings.txPower = resp(7);
+                    settings.worInt  = resp(8);
+                    settings.rxTimeout = resp(9);
+                    settings.retries = resp(10);
+                elseif NNP.verbose > 0
+                    disp(['Bad Response from Access Point: ' num2str(resp', ' %02X')]);
+                end
+            elseif NNP.verbose > 0
+               disp('No Response from Access Point');        
+            end
+        end
+        
+        function [success, settings] = setRadio(NNP, varargin)
+        % SETRADIO - Set radio settings using Value Pair inputs
+        % [success, settings] = setRadio(name1,value1,name2,value2) 
+        % e.g. setRadio('chan', 5) sets channel to 5 on AccessPoint 
+        % 
+        % Outputs: 
+        %  success: true if radio settings were successfully set, false
+        %           otherwise
+        %  settings: returned Access Point radio settings structure
+        %
+        % Value Pair Values and Names
+        % Address of AccessPoint: 1-254 
+        %  {'addrAP', 'addressAP', 'addressap', 'addrap', 'AP', 'ap', 'accesspoint', 'AccessPoint'}
+        % Address of PowerModule: 1-254
+        %  {'addrPM', 'addressPM', 'addresspm', 'addrpm', 'PM', 'pm', 'PowerModule', 'powermodule', 'implant'}
+        % Radio Channel: 0-9 
+        %  {'chan', 'Chan', 'ch', 'Ch', 'channel', 'Channel'}
+        % Transmit Power: 0-46 
+        %  {'txPower', 'TXPower', 'txpower', 'power', 'Power'}
+        % WOR wake interval: 0 or 14-255 (in ms) 
+        %  {'worInt', 'worint', 'WorInt', 'wakeInterval', 'wakeinterval'}
+        % Radio Timeout: 0-255 (in ms)
+        %  {'rxTimeout', 'RXTimeOut', 'rxtimeout','rxTimeOut', 'timeout', 'Timeout'} 
+        % Retry attempts: 0-5 
+        %  {'retries', 'Retries'}
+        % Save values to Flash: true, false 
+        %  {'save', 'Save', 'flash', 'Flash'}
+            if rem(nargin,2) ~= 1
+                error('Radio settings must be listed in Pairs')
+            end
+            settingsIn = NNP.getRadioSettings();
+            save = false;
+            
+            for i = 1:2:nargin-2 
+                switch varargin{i}   
+                    case {'addrAP', 'addressAP', 'addressap', 'addrap', 'AP', 'ap', 'accesspoint', 'AccessPoint'} 
+                        settingsIn.addrAP = varargin{i+1};
+                    case {'addrPM', 'addressPM', 'addresspm', 'addrpm', 'PM', 'pm', 'PowerModule', 'powermodule', 'implant'}
+                        settingsIn.addrPM = varargin{i+1};
+                    case {'chan', 'Chan', 'ch', 'Ch', 'channel', 'Channel'}
+                        settingsIn.chan = varargin{i+1};
+                    case {'txPower', 'TXPower', 'txpower', 'power', 'Power'}
+                        settingsIn.txPower = varargin{i+1};
+                    case {'worInt', 'worint', 'WorInt', 'wakeInterval', 'wakeinterval'}
+                        settingsIn.worInt = varargin{i+1};
+                    case {'rxTimeout', 'RXTimeOut', 'rxtimeout','rxTimeOut', 'timeout', 'Timeout'}    
+                        settingsIn.rxTimeout = varargin{i+1};
+                    case {'retries', 'Retries'}
+                        settingsIn.retries = varargin{i+1};
+                    case {'save', 'Save', 'flash', 'Flash'}
+                        save = varargin{i+1};
+                    otherwise
+                        error('Not a Radio setting');
+                end
+            end
+            settings = NNP.setRadioSettings(settingsIn, save);
+            success = isequal(settingsIn, settings);
+        end 
+                    
+
+        function  settings = setRadioSettings(NNP,  settingsIn , save)
+        % SETRADIOSETTINGS - Writes AccessPoint radio settings 
+        % 
+        % settings = setRadioSettings(settingsIn, save) 
+        %   save = true: new settings are saved in AccessPoint Flash 
+        %   save = false (default): new settings are changed in AccessPoint 
+        %                   RAM and will be reset when AccessPoint is power cycled 
+        % Settings Fields:
+        %   addrAP: 1-254 
+        %   addrPM: 1-254 
+        %   chan: 0-9
+        %   txPower: 0-46
+        %   worInt: 0 or 14-255
+        %   rxTimeout: 0-255
+        %   retries: 0-5
+        %
+        % Output: 
+        %  settings: returned Access Point radio settings structure
+        
+
+            settings = []; %initialize output
+            NNP.flushInput();
+
+            %optional parameter to make settings temporary.  
+            if nargin < 2
+                error('not enough inputs')
+            elseif nargin == 2
+                save = false;
+            end
+
+            if save == true
+                cmd = 72; 
+            else 
+                cmd = 74; %temporary
+            end
+
+
+            fwrite(NNP.port, uint8([255 cmd 10 ...
+                           settingsIn.addrAP...
+                           settingsIn.addrPM ...
+                           settingsIn.chan ...
+                           settingsIn.txPower ...
+                           settingsIn.worInt...
+                           settingsIn.rxTimeout ...
+                           settingsIn.retries ]), 'uint8');
+
+            t = tic;
+            while NNP.port.BytesAvailable < 10 && toc(t)< NNP.timeout
+                %delay loop
+            end
+            if NNP.port.BytesAvailable 
+                resp = fread(NNP.port, NNP.port.BytesAvailable, 'uint8');
+                if resp(1)==255 && length(resp)==resp(3) && length(resp)==10 && resp(2) == 6
+                    settings.addrAP  = resp(4);
+                    settings.addrPM  = resp(5);
+                    settings.chan    = resp(6);
+                    settings.txPower = resp(7);
+                    settings.worInt  = resp(8);
+                    settings.rxTimeout = resp(9);
+                    settings.retries = resp(10);
+                elseif NNP.verbose>0
+                    disp(['Bad Response from Access Point: ' num2str(resp, '%02X')]);
+                end
+            elseif NNP.verbose>0
+               disp('No Response from Access Point');          
+            end
+        end
+        
+        function [sw, hw] = getAPRev(NNP)
+        % GETAPREV - Reads AccessPoint SW/HW Rev
+            sw = []; %initialize output
+            hw = [];
+            
+            NNP.flushInput();
+            
+            fwrite(NNP.port, uint8([255 32 3]), 'uint8');
+            
+            t = tic;
+            while NNP.port.BytesAvailable < 7 && toc(t)< NNP.timeout
+                %delay loop
+            end
+            if NNP.port.BytesAvailable 
+                resp = fread(NNP.port, NNP.port.BytesAvailable, 'uint8');
+                if resp(1)==255 && length(resp)==resp(3) && length(resp)==7 && resp(2) == 6
+                    sw  = double(resp(4)) + double(resp(5)*256);
+                    hw  = double(resp(6)) + double(resp(7)*256);
+                elseif NNP.verbose > 0
+                    disp(['Bad Response from Access Point: ' num2str(resp', ' %02X')]);
+                end
+            elseif NNP.verbose > 0
+               disp('No Response from Access Point');        
+            end
+        end
+        
+        %% Transmit
+        
+        function [dataRX, errOut, NNP]= transmit(NNP, node, data, counter, protocol)
+        % TRANSMIT - Sends message to PM following NNP Radio API and returns response
+        % [dataRX, errOut]= transmit(NNP, node, data, counter, protocol)
+        %
+        % errOut:
+        % 1: PM Internal or CAN error
+        % 2: PM response is too short
+        % 3: Radio Timeout
+        % 4: Unknown response from AccessPoint
+        % 5: No response from AccessPoint
+        % 6: PM response does not echo request
+        % 7: Bad CRC
+        
+            errOut = 7;
+            dataRX = [];
+            rssioffset = 74;
+
+            if length(data) + 7 >  62 %Maximum bytes on Access Point CHECK THIS! <<TODO
+                error('data to write is too long');
+            end
+
+            %if netID = 0, then response is always 7 
+            if node == 7  
+                netID = 1;
+            else
+                netID = 1;
+            end
+
+            NNP.flushInput();
+            fwrite(NNP.port, uint8([255, 71, length(data)+7  protocol, counter, netID, node, data]), 'uint8');
+
+            t = tic;
+            while NNP.port.BytesAvailable == 0 && toc(t)< NNP.timeout
+                %delay loop
+            end
+            if NNP.port.BytesAvailable
+                resp = uint8(fread(NNP.port, NNP.port.BytesAvailable, 'uint8')');
+                if NNP.verbose == 2
+                    disp(['Response: ' num2str(resp,' %02X')]);
+                end
+
+                %radio response on AccessPoint
+                if resp(1)==255 && length(resp)==resp(3) && length(resp)>=3 && resp(2)==6 
+
+                    %if message is long enough to include RSSI/LQI/CRC, calculate it
+                    if length(resp) >= 7 %minimum usb header (3) + radio addr, len, rssi, lqi
+                         rssiraw = double(resp(end-1));
+                         lqiraw = double(resp(end));
+                         if rssiraw < 128
+                             NNP.RSSI = rssiraw/2 - rssioffset;
+                         else
+                             NNP.RSSI = (rssiraw-256)/2 - rssioffset;
+                         end
+                         if lqiraw >= 128
+                            NNP.LQI = lqiraw - 128;
+                         else
+                            NNP.LQI = lqiraw;
+                             if NNP.verbose > 0
+                                disp(['Bad CRC:' num2str(resp(1:end), ' %02X')]');
+                             end
+                             errOut = 7;
+                             return;
+                         end
+
+                         if NNP.verbose == 2
+                            disp(['RSSI: ', num2str(NNP.RSSI), 'dB | LQI: ', num2str(NNP.LQI)]);
+                         end
+                    end
+
+                    if length(resp) >= 13 
+                        %PM flagged response as error message     
+                        if resp(7) > 127 
+                           if NNP.verbose > 0
+                               disp(['PM Internal/CAN error: ', num2str(resp(12:end-2),' %02X')]); 
+                           end
+                           errOut = 1;
+
+                        %PM response doesn't match request
+                        %JML TODO: not sure all message types echo these 4 elements!
+                        elseif resp(4)~= protocol || resp(5)~=counter || resp(6)~=netID || resp(7)~=node
+                            if NNP.verbose > 0
+                                disp(['PM response does not echo request: ' num2str(resp(1:end-2), ' %02X')])
+                            end
+                            errOut = 6;
+
+                        %Expected response!
+                        else 
+                            dataRX = resp(11:end-2);
+                            errOut = 0; 
+                        end
+                    else
+                        if NNP.verbose > 0
+                            disp(['Short message: ', num2str(resp(1:end-2), ' %02X')]);
+                        end
+                        errOut = 2;
+                    end
+
+                %Radio timeout on AccessPoint    
+                elseif resp(1)==255 && length(resp)==resp(3) && length(resp)==3 && resp(2)==13
+                    if NNP.verbose > 0
+                        disp('Radio Timeout')
+                    end
+                    errOut = 3;
+
+                %Unknown response from AccessPoint
+                else
+                    if NNP.verbose > 0  
+                        disp(['Bad Response from Access Point: ', num2str(resp(1:end-2), ' %02X')]);
+                    end
+                    errOut = 4;
+                end
+
+            %No response from AccessPoint
+            else
+                if NNP.verbose > 0
+                    disp('No Response from Access Point');
+                end
+                errOut = 5;
+            end
+        
+        end
+
+        %% SDO Read
+        
+        function dataOut = read(NNP, node, indexOD, subIndexOD, varargin) 
+        % READ - Read data from Object Dictionary subindex or subindices 
+        % (SDO read or block read)
+        % dataOut = read(NNP, node, indexOD, subIndexOD)
+        % dataOut = read(NNP, node, indexOD, subIndexOD, readType)
+        % dataOut = read(NNP, node, indexOD, subIndexOD, numSubIndices)
+        % dataOut = read(NNP, node, indexOD, subIndexOD, readType, numSubIndices)
+        %
+        % Inputs:
+        % port:       serial port for access point
+        % node:       7 for PM or 1-15 for RM
+        % indexOD:    OD index specified as 4 character hex string, (e.g. '1F53')
+        % subIndexOD: OD subindex specified as 1-2 charachter hex string, (e.g. 'A' or '0A') 
+        %             or as decimal numerical value (e.g. 10) 
+        % Optional Inputs:
+        % nSubindices: 1-50 decimal value indicating number of subindicse to read.
+        %             Note: it is expected that all subindices to be read have same
+        %             (scalar) type.
+        %              (default = 1)
+        % readType:  'uint8', 'uint16', 'uint32', 'int8', 'int16', 'int32', or 'string'
+        %             use 'uint8' for bytearrays
+        %              (default = 'uint8')
+        % Output:
+        % dataOut:    Object Dictionary entry cast to the specified readType
+        %
+        %NOTE: assumes little-endian processor for byte conversions to uint16, uint32, etc.
+        %use: <code> [str,maxsize,endian] = computer </code>  to check your system
+            if nargin < 4
+                error('needs at least 4 inputs')
+            end
+
+            %defaults
+            readType = 'uint8';
+            numSubIndices = 1;
+            
+            %if optional arguments are provided, determine whether readType, nSubIndices, or both 
+            for i=1:length(varargin)
+                 if ischar(varargin{i})
+                    readType = varargin{i};
+                 elseif isnumeric(varargin{i})
+                    numSubIndices = varargin{i};
+                 else
+                     warning('Optional arguments ignored because they are not correct type');
+                 end
+            end
+
+            data = zeros(1,4, 'uint8');    
+            dataOut = [];
+
+            if node == 0 
+                error('Message cannot be broadcast')
+            end
+            % check for valid OD Index
+            if ischar(indexOD)
+                if length(indexOD) ~= 4
+                    error('OD index must be specified as 4 letter (hex) string');
+                else
+                    try
+                        data(1) = hex2dec(indexOD(3:4)); %low byte
+                        data(2) = hex2dec(indexOD(1:2)); %high byte
+                    catch
+                        error('OD index string type: hex string character must be 0-9 or a-f, A-F');
+                    end
+                end
+            else   
+                error('index must be as a string');
+            end
+            % check for valid OD SubIndex
+            if ischar(subIndexOD)
+                if length(subIndexOD) > 2
+                    error('OD subindex string type: must be specified as <=2 letter (hex) string');
+                else
+                    try 
+                        data(3) = hex2dec(subIndexOD);
+                    catch
+                        error('OD subindex string type: hex string character must be 0-9 or a-f, A-F');
+                    end
+                end
+            else
+                if subIndexOD > 255 || subIndexOD < 0
+                    error('OD subindex numerical type: subindex must be between 0 and 255');
+                else
+                    data(3) = subIndexOD;
+                end
+            end
+            if numSubIndices > 1
+                data(4) = numSubIndices; 
+                [dataRX, err] = NNP.transmit(node, data, 0, hex2dec('30')); %SDO Block Read
+            else
+                [dataRX, err] = NNP.transmit(node, data, 0, hex2dec('24')); %SDO Read
+            end
+            if err == 0
+                if strcmpi(readType, 'string')
+                    dataOut = char(typecast(dataRX(2:end), 'uint8')); %first byte is length byte
+                else
+                    dataOut = typecast(dataRX(2:end), readType); %first byte is length byte
+                end
+            end
+        end
+        
+        %% SDO Write
+        
+        function dataOut = write(NNP, node, indexOD, subIndexOD, writeData, varargin) 
+        % WRITE - Write data to Object Dictionary subindex or subindices 
+        %(SDO write or block write)
+        % dataOut = write(NNP, node, indexOD, subIndexOD, writeData)
+        % dataOut = write(NNP, node, indexOD, subIndexOD, writeData, numSubIndices)
+        % dataOut = write(NNP, node, indexOD, subIndexOD, writeData, writeType)
+        % dataOut = write(NNP, node, indexOD, subIndexOD, writeData, writeType, numSubIndices)
+        %
+        % port:       serial port for access point
+        % node:       7 for PM or 1-15 for RM
+        % indexOD:    OD index specified as 4 character hex string, (e.g. '1F53')
+        % subIndexOD: OD subindex specified as 1-2 charachter hex string, (e.g. 'A' or '0A') 
+        %             or as decimal numerical value (e.g. 10) 
+        % writeData:  array of values to be sent (will be converted to writeType,
+        %             if not already)
+        % Optional Inputs:
+        % nSubindices: 1-50 decimal value indicating number of subindicse to read.
+        %             Note: it is expected that all subindices to be read have same
+        %             (scalar) type.
+        %              (default = 1)
+        % writeType:  'uint8', 'uint16', 'uint32', 'int8', 'int16', 'int32', or 'string'
+        %             use 'uint8' for bytearrays
+        %              (default = 'uint8')
+        % Output:
+        % dataOut:    Object Dictionary entry cast to the specified writeType
+        %
+        %NOTE: assumes little-endian processor for byte conversions to uint16, uint32, etc.
+        %use: <code> [str,maxsize,endian] = computer </code>  to check your system
+        %
+
+            if nargin < 5
+               error('needs at least 5 inputs')
+            end
+            
+            %defaults
+            writeType = 'uint8';
+            numSubIndices = 1; 
+            
+            %if optional arguments are provided, determine whether readType, nSubIndices, or both 
+            for i=1:length(varargin)
+                 if ischar(varargin{i})
+                    writeType = varargin{i};
+                 elseif isnumeric(varargin{i})
+                    numSubIndices = varargin{i};
+                 else
+                     warning('Optional arguments ignored because they are not correct type');
+                 end
+            end
+   
+
+
+            data = zeros(1,4, 'uint8');    
+            dataOut = [];
+
+            if node == 0 
+                error('Message cannot be broadcast')
+            end
+            % check for valid OD Index
+            if ischar(indexOD)
+                if length(indexOD) ~= 4
+                    error('OD index must be specified as 4 letter (hex) string');
+                else
+                    try
+                        data(1) = hex2dec(indexOD(3:4)); %low byte
+                        data(2) = hex2dec(indexOD(1:2)); %high byte
+                    catch
+                        error('OD index string type: hex string character must be 0-9 or a-f, A-F');
+                    end
+                end
+            else   
+                error('index must be as a string');
+            end
+            % check for valid OD SubIndex
+            if ischar(subIndexOD)
+                if length(subIndexOD) > 2
+                    error('OD subindex string type: must be specified as <=2 letter (hex) string');
+                else
+                    try
+                        data(3) = hex2dec(subIndexOD);
+                    catch
+                        error('OD subindex string type: hex string character must be 0-9 or a-f, A-F');
+                    end
+                end
+            else
+                if subIndexOD > 255 || subIndexOD < 0
+                    error('OD subindex numerical type: subindex must be between 0 and 255');
+                else
+                    data(3) = subIndexOD;
+                end
+            end
+            
+            if strcmpi(writeType, 'string')
+                if numSubIndices > 1
+                    error('string is not supported for SDO_BlockWrite');
+                else
+                    writeType = 'uint8'; %string will get casted to bytes
+                end
+            end
+            writeData = cast(writeData, writeType); % make sure data is actually assigned as specified
+            writeBytes = typecast(writeData, 'uint8');
+            len = length(writeBytes);
+            
+            if numSubIndices > 1
+                switch writeType
+                    case {'uint8', 'int8'}
+                        mul = 1;
+                        data(4) = numSubIndices;
+                    case {'uint16', 'int16'}
+                        mul = 2;
+                        data(4) = numSubIndices + 64; %set bit6
+                    case {'uint32', 'int32'} 
+                        mul = 4;
+                        data(4) = numSubIndices + 128; %set bit 7
+                    otherwise
+                        error('unsupported type');
+                end
+                if len ~= numSubIndices*mul
+                    error('number of data bytes does not match numSubIndices and writeType')
+                end
+
+                [dataRX, err] = transmit(NNP, node, [data writeBytes], 0, hex2dec('B0')); %SDO Block Write
+            else
+                data(4) = len;
+                [dataRX, err] = transmit(NNP, node, [data writeBytes], 0, hex2dec('A4')); %SDO Write
+            end
+            if err == 0
+                dataOut = dataRX(2:end);
+            end
+        end
+        
+        %% NMT 
+        
+        function dataOut = nmt( NNP, node, command, param1, param2 )
+        % NMT - Send Network Management Command
+        %  dataOut = NMT_Command( port, node, command, param1, param2 )
+        %  dataOut = NMT_Command( port, node, command, param1 )
+        %  dataOut = NMT_Command( port, node, command )
+        % 
+        % port:       serial port for access point
+        % node:       8 for CT, 7 for PM or 1-15 for RM
+        % command:    NMT command specified as 1-2 charachter hex string, (e.g. 'A' or '0A') 
+        %             or as decimal numerical value (e.g. 10) 
+        % param1:     decimal value
+        % param2:     decimal value
+        % dataOut:    command echoed (in decimal) if occured with no errors
+        
+            dataOut = []; 
+            
+            if nargin < 5
+                param2 = [];
+                if nargin < 4
+                    param1 = [];
+                    if nargin <3
+                        error('needs at least 3 inputs')
+                    end
+                end
+            end
+
+            % check for valid NMT
+            if ischar(command)
+                if length(command) > 2
+                    error('command string type: must be specified as <=2 letter (hex) string');
+                else
+                    try
+                        command = hex2dec(command);
+                    catch
+                        error('NMT string type: hex string character must be 0-9 or a-f, A-F');
+                    end
+                end
+            else
+                if command > 255 || command < 0
+                    error('command numerical type: subindex must be between 0 and 255');
+                end
+            end
+
+
+
+            %check for valid param1 and/or param2
+            if isempty(param1) && ~isempty(param2)
+                error('param2 cannot be provided if param1 is empty');
+            elseif ~isempty(param1) && (param1 > 255 || param1 < 0)
+                error('param1 must be between 0 and 255 if not empty, []');
+            elseif ~isempty(param2) && (param2 > 255 || param2 < 0)
+                error('param1 must be between 0 and 255 if not empty, []');
+            end
+
+            if  isempty(param1) && isempty(param2) 
+                data = zeros(1,5, 'uint8');
+                data(4) = 1;
+                data(5) = command;
+            elseif  isempty(param2)
+                data = zeros(1,6, 'uint8');
+                data(4) = 2;
+                data(5) = command;
+                data(6) = param1;
+            else
+                data = zeros(1,7, 'uint8'); 
+                data(4) = 3;
+                data(5) = command;
+                data(6) = param1;
+                data(7) = param2;
+            end
+            [dataRX, err]= NNP.transmit( node, data, 0, hex2dec('34'));
+            if err == 0
+                dataOut = dataRX(2:end);
+            end
+        end  
+        
+        %% Wake On Radio
+        
+        function success = worOn(NNP, wakeInterval )
+        %WORON - Sets PM to "Wake On Radio" mode and enables long preambles on Access Point
+        %  using the specified wake interval (in ms).  
+        %   Longer wake interval results in lower power consumption but 
+        %   lower maximum bandwidth and higher latency.  
+        %   Note: Turning on WOR has much larger effect then changing wake
+        %   interval
+        %   
+        %   Default = 20ms
+        %   Minimum = 14ms
+        %   Maximum = 255ms
+            
+            if nargin < 2
+                wakeInterval = 20;
+                if nargin < 1
+                    error('needs at least 1 input');
+                end
+            end
+            
+            %configure wake interval on Access Point
+            settings = NNP.getRadioSettings();
+            if settings.worInt ~= wakeInterval
+                settings.worInt = wakeInterval;
+                settingsOut = NNP.setRadioSettings(settings, false);
+                if NNP.verbose > 0 && settingsOut.worInt ~= wakeInterval
+                    warning(['wakeInterval set to:', num2str(settingsOut.worInt)])
+                end
+            end
+
+            %turn WOR on PM with same wake interval
+            resp = NNP.nmt(7, '8B', uint8(wakeInterval),0);
+            if resp == hex2dec('8B')
+                success = true;
+            else
+                success = false;
+            end
+        end
+
+        function success = worOff( NNP )
+        %WOROFF - turns off "Wake On Radio" on PM and turns off long preamble on Access Point
+        %   Significantly increases PM power consumption but maximizes
+        %   max radio bandwidth and minimizes latency
+
+            if nargin < 1
+                error('needs at least 1 input');
+            end
+
+            %turn WOR off on PM
+            resp = NNP.nmt(7, '8C'); 
+
+            if resp == hex2dec('8C')
+                success = true;
+            else
+                success = false;
+            end
+            %eliminate wake interval on Access Point
+            settings = NNP.getRadioSettings();
+            if settings.worInt ~= 0
+                settings.worInt = 0;
+                settingsOut = NNP.setRadioSettings(settings, false);
+                if NNP.verbose > 0 && settingsOut.worInt ~= 0
+                    warning(['wakeInterval set to:', num2str(settingsOut.worInt)])
+                end
+            end
+
+        end
+        
+        %% Read File
+        function cancelReadFile(obj, event, NNP)
+            disp('cancel')
+            NNP.cancelRead = true;
+        end
+        
+        function dataOut = readFile( NNP, file, address, len, print, fileOut)
+        %READFILE - Read PM Log or OD Restore file
+        %   
+        dataOut = [];
+
+        if nargin < 6
+            fileOut = [];
+            fid = 1;
+            disp('fileOut parameter not included, so printing to command line')
+            if nargin < 5
+                print = false;
+                if nargin < 4
+                    error('needs at least 4 inputs')
+                end
+            end
+        end
+
+        switch print
+            case {true, 'ascii', 'ASCII', 1}
+                print = 1;
+            case {'bin', 'binary','Bin','Binary', 2}
+                print = 2;
+            case {'hex', 'Hex', 3}
+                print = 3;    
+            case {false, 0}  
+                print = 0;
+        end
+        switch file
+            case {'log', 'Log', 1}
+                counter = hex2dec('D0') + 1; %log file init
+                file = 'Log';
+            case {'param', 'odrestore', 'OD Restore', 2}
+                counter = hex2dec('D0') + 2; %OD restore file init
+                file = 'OD Restore';
+            otherwise
+                error('Not a valid file ID')
+        end
+        %counter = hex2dec('D0') + hex2dec('0E'); %remaining file
+
+        if ~isempty(fileOut)
+            fid = fopen(fileOut, 'w+');  %open or create file for writing and discard existing contents 
+        end
+
+        if strcmp(len, 'all')
+            len = NNP.getLogCursor();
+            if isempty(len)
+                error('len could not be determined')
+            elseif len == 0
+                disp('no data in log');
+                return;
+            end
+        end
+        
+        
+
+        %len = uint16(len);
+        %lenBytes = typecast(len, 'uint8'); %Note: currently len cannot exceed 
+        msgsize = 48; %msgsize should not exceed 48
+
+        address = uint32(address);
+        
+        startaddress = address;
+        if rem(len, msgsize)
+            finaladdress = address+len-rem(len, msgsize);
+        else
+            finaladdress = address+len- msgsize;
+        end
+        h = waitbar(0, sprintf(' Start Address: 0x%06X\n Final Address: 0x%06X\nCurrent Address: 0x%06X', startaddress, finaladdress, address) ,...
+            'Name', ['Reading ', file, ' file.']);%,'CreateCancelBtn', @cancelReadFile  );
+        %a = get(h, 'CurrentAxes' );
+        h.CurrentAxes.FontName = 'Monospaced';
+
+        
+        while len > 0
+            %double(address-startaddress)/double(finaladdress-startaddress)
+            waitbar(double(address-startaddress)/double(finaladdress-startaddress), h, ...
+            sprintf(' Start Address: 0x%06X\n Final Address: 0x%06X\nCurrent Address: 0x%06X', startaddress, finaladdress, address));
+            if len > msgsize
+                n = uint16(msgsize);
+            else
+                n = uint16(len);
+            end
+            lenBytes = typecast(n, 'uint8');
+            addressBytes = typecast(address, 'uint8');
+            data = [0 0 0 6 addressBytes lenBytes];
+            [dataRX, err] = NNP.transmit(7, data, counter, hex2dec('26'));
+            if err == 0
+                if length(dataRX) < 4
+                    disp('response contains no data')
+                    continue;
+                end
+                %remaining = dataRX(2:3)
+                dataFile = dataRX(4:end)';
+                dataOut = [dataOut; dataFile];
+                switch print
+                    case 1
+                        %print as formatted text
+                        fprintf(fid, '%s', char(dataFile));
+                    case 2
+                        %binary file, no formatting
+                        fwrite(fid, dataFile);
+                    case 3
+                        %up to 16 bytes per line.  Note only woks if msgsize is intefer multiple of 16
+                        fprintf(fid, '%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n', dataFile);
+                end
+            else
+                %retry
+                continue;
+            end
+            len = len - double(n);
+            address = address + uint32(n);
+            
+            
+            pause(0.01)
+        end
+
+        %close(h);
+        if ~isempty(fileOut)
+            fclose(fid);
+        end
+
+        end
+        
+        %% Shortcuts 
+        function success = networkOn(NNP)
+            %turn ON network
+            resp = NNP.nmt(7, '95'); 
+            success = (resp == hex2dec('95'));
+        end
+        function success = networkOnBootloader(NNP)
+            %turn ON network and don't start RM apps
+            resp = NNP.nmt(7, 'A0'); 
+            success = (resp == hex2dec('A0'));
+        end
+        function success = networkOff(NNP)
+             %turn OFF network 
+            resp = NNP.nmt(7, '96');
+            success = (resp == hex2dec('96'));
+        end
+        function success = enterWaiting(NNP)
+            %Enter Waiting
+            resp = NNP.nmt(0, '07'); 
+            success = (resp == hex2dec('07'));
+        end
+        function success = enterPatient(NNP, pattern)
+            %Enter Patient Mode
+            if nargin > 1
+                resp = NNP.nmt(0, '03', pattern); 
+            else
+                resp = NNP.nmt(0, '03');
+            end
+            success = (resp == hex2dec('03'));
+        end
+        function success = enterTestStim(NNP, mode)
+            %Enter "Y Manual" Mode
+            if nargin > 1
+                resp = NNP.nmt(0, '05', mode); 
+            else
+                resp = NNP.nmt(0, '05');
+            end
+            success = (resp == hex2dec('05'));
+        end
+        function success = enterTestPatterns(NNP, pattern)
+             %Enter "X Manual" Mode
+            if nargin > 1
+                resp = NNP.nmt(0, '04', pattern);
+            else
+                resp = NNP.nmt(0, '04');
+            end
+            success = (resp == hex2dec('04'));
+        end
+        function success = enterTestRaw(NNP, node, ch) 
+            %Enter Raw MES Mode
+            resp = NNP.nmt(0, '0C', node+(ch-1)*16); 
+            success = (resp == hex2dec('0C'));
+        end
+        function success = enterTestFeatures(NNP)
+            %Enter "Produce X" Mode
+            resp = NNP.nmt(0, '09'); 
+            success = (resp == hex2dec('09'));
+        end
+        function rev = getSwRev(NNP, node)    
+            % Get Node's Software Revision #
+           rev = double(NNP.read(node, '1018', 3, 'uint32')); % rev
+        end
+        function sn = getSerial(NNP, node)    
+            % Get Node's PCB Serial Number #
+           sn = double(NNP.read(node, '1018', 4, 'uint32')); % pcb serial number
+        end
+        function success = setVNET(NNP, V) 
+            % Set PM Network Voltage. V in Volts
+            if V < 4.6 || V > 9.5
+                error('Voltage out of range: must be between 4.6 and 9.5V')
+            end
+            resp = NNP.write(7, '3010', 0, uint8(V*10), 'uint8'); %VNET
+            success = (resp == 0);
+        end
+        function vnet = getVNET(NNP) 
+            % Get PM Network Voltage. V in Volts
+            vnet = double(NNP.read(7, '3010', 0, 'uint8'))/10; %VNET
+        end
+        function temp = getTemp(NNP, node) 
+            % Get Temp in deg C
+            resp = NNP.read(node, '2003', 1, 'uint16'); 
+            if length(resp) == 1
+                temp = double(resp)/10;
+            else
+                temp = [];
+            end
+        end
+        function [accel, cnt, mag] = getAccel(NNP, node)
+            %Get accel in g's
+            temp = NNP.read(node, '2011', 1, 'uint8'); %
+            if length(temp)==4
+                if all(temp==255)
+                    accel = [Inf Inf Inf];
+                    cnt = Inf;
+                    mag = Inf;
+                else
+                    accel = [0 0 0];
+                    for i=1:3
+                        accel(i) = (double((bitshift(temp(i), -2))) - 32)/16;
+                    end
+                    cnt = double(temp(4));
+                    mag = norm(accel);
+                end
+            else
+                accel = [];
+                cnt = [];
+                mag = [];
+            end
+        end
+        function success = setMESgain(NNP, node, ch, gain) 
+            %Set MES gain 
+            if ch == 1
+                Index = '3411';
+            elseif ch ==2
+                Index = '3511';
+            else
+                error('Incorrect Channel: must be 1 or 2')
+            end
+            resp = NNP.write(node, Index, 1, uint8(gain), 'uint8');
+            success = (resp == 0);
+        end
+        function stacks = checkPMStacks(NNP)
+            %Check PM Task stacks
+            stacks = double(NNP.read(7, '3030', 1,9,'uint8'));
+        end
+        function success = saveOD(NNP, node)
+            %Save Node's OD
+            resp = NNP.nmt(node, '0A');
+            success = (resp == hex2dec('0A'));
+        end
+        function success = resetPM(NNP)
+            %Reset PM
+            resp = NNP.nmt(7, '9E'); 
+            success = (resp == hex2dec('9E'));
+        end
+        function success = setSync(NNP, T) 
+            %Set PM sync interval (in ms)
+            resp = NNP.write(7, '1006', 0, uint32(T), 'uint32'); 
+            success = (resp == 0);
+        end
+        function T = getSync(NNP) 
+            %Get PM sync interval (in ms)
+            T = double(NNP.read(7, '1006', 0, 'uint32')); 
+        end
+        function success = flushLog(NNP)
+            % Clear the PM Log space
+            resp = NNP.nmt(7,'B8',1);
+            success = (resp == hex2dec('B8'));
+        end
+        function success = initDirectory(NNP) %JML: do we need this?
+            % Initialize the PM Log directory
+            resp = NNP.nmt(7,'B9');
+            success = (resp == hex2dec('B9'));
+        end
+        function A = getLogCursor(NNP)  
+            % Get PM Log cursor position (remote flash address)
+            A = double(NNP.read(7,'a200', 3, 'uint32'));
+        end
+        function status = getNetworkStatus(NNP)
+            status = double(NNP.read(7, '3004', 1));
+        end
+    end
+end
+
