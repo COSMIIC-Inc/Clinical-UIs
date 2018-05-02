@@ -272,7 +272,7 @@ classdef NNPAPI < handle
         
         %% Transmit
         
-        function [dataRX, errOut, NNP]= transmit(NNP, node, data, counter, protocol)
+        function [dataRX, errOut]= transmit(NNP, node, data, counter, protocol)
         % TRANSMIT - Sends message to PM following NNP Radio API and returns response
         % [dataRX, errOut]= transmit(NNP, node, data, counter, protocol)
         %
@@ -393,7 +393,139 @@ classdef NNPAPI < handle
             end
         
         end
+        
+        function [dataRX, errOut]= pmboot(NNP, cmd, varargin)
+        % PMBOOT - Sends message to PM following NNP RadioBootloader API and returns response
+        % [dataRX, errOut]= pmboot(NNP, cmd, data)
+        %
+        % errOut:
+        % 1: PM Internal or CAN error
+        % 2: PM response is too short
+        % 3: Radio Timeout
+        % 4: Unknown response from AccessPoint
+        % 5: No response from AccessPoint
+        % 6: PM response does not echo request
+        % 7: Bad CRC
+        
+            errOut = 7;
+            dataRX = [];
+            rssioffset = 74;
 
+            if nargin<3
+                data = [];
+            else
+                data = varargin{1};
+            end
+            
+            if length(data) + 1 >  62 %Maximum bytes on Access Point CHECK THIS! <<TODO
+                error('data to write is too long');
+            end
+
+            if ischar(cmd)
+                cmd = hex2dec(cmd); 
+            end
+            
+            NNP.flushInput();
+            fwrite(NNP.port, uint8([255, 71, length(data)+4  cmd, data]), 'uint8');
+
+            t = tic;
+            while NNP.port.BytesAvailable == 0 && toc(t)< NNP.timeout
+                %delay loop
+            end
+            if NNP.port.BytesAvailable
+                resp = uint8(fread(NNP.port, NNP.port.BytesAvailable, 'uint8')');
+                if NNP.verbose == 2
+                    disp(['Response: ' num2str(resp,' %02X')]);
+                end
+
+                %radio response on AccessPoint
+                if resp(1)==255 && length(resp)==resp(3) && length(resp)>=3 && resp(2)==6 
+
+                    %if message is long enough to include RSSI/LQI/CRC, calculate it
+                    if length(resp) >= 5 %minimum usb header (3) +  rssi, lqi
+                         rssiraw = double(resp(end-1));
+                         lqiraw = double(resp(end));
+                         if rssiraw < 128
+                             NNP.RSSI = rssiraw/2 - rssioffset;
+                         else
+                             NNP.RSSI = (rssiraw-256)/2 - rssioffset;
+                         end
+                         if lqiraw >= 128
+                            NNP.LQI = lqiraw - 128;
+                         else
+                            NNP.LQI = lqiraw;
+                             if NNP.verbose > 0
+                                disp(['Bad CRC:' num2str(resp(1:end), ' %02X')]');
+                             end
+                             errOut = 7;
+                             return;
+                         end
+
+                         if NNP.verbose == 2
+                            disp(['RSSI: ', num2str(NNP.RSSI), 'dB | LQI: ', num2str(NNP.LQI)]);
+                         end
+                        dataRX = resp(4:end-2);    
+                    else
+                        if NNP.verbose > 0
+                            disp(['Short message: ', num2str(resp(1:end-2), ' %02X')]);
+                        end
+                        errOut = 2;
+                    end
+                    
+%                     if length(resp) >= 13 
+%                         %PM flagged response as error message     
+%                         if resp(7) > 127 
+%                            if NNP.verbose > 0
+%                                disp(['PM Internal/CAN error: ', num2str(resp(12:end-2),' %02X')]); 
+%                            end
+%                            errOut = 1;
+% 
+%                         %PM response doesn't match request
+%                         %JML TODO: not sure all message types echo these 4 elements!
+%                         elseif resp(4)~= protocol || resp(5)~=counter || resp(6)~=netID || resp(7)~=node
+%                             if NNP.verbose > 0
+%                                 disp(['PM response does not echo request: ' num2str(resp(1:end-2), ' %02X')])
+%                             end
+%                             errOut = 6;
+% 
+%                         %Expected response!
+%                         else 
+%                             dataRX = resp(11:end-2);
+%                             errOut = 0; 
+%                         end
+%                     else
+%                         if NNP.verbose > 0
+%                             disp(['Short message: ', num2str(resp(1:end-2), ' %02X')]);
+%                         end
+%                         errOut = 2;
+%                     end
+
+                %Radio timeout on AccessPoint    
+                elseif resp(1)==255 && length(resp)==resp(3) && length(resp)==3 && resp(2)==13
+                    if NNP.verbose > 0
+                        disp('Radio Timeout')
+                    end
+                    errOut = 3;
+
+                %Unknown response from AccessPoint
+                else
+                    if NNP.verbose > 0  
+                        disp(['Bad Response from Access Point: ', num2str(resp(1:end-2), ' %02X')]);
+                    end
+                    errOut = 4;
+                end
+
+            %No response from AccessPoint
+            else
+                if NNP.verbose > 0
+                    disp('No Response from Access Point');
+                end
+                errOut = 5;
+            end
+        
+        end
+
+        
         %% SDO Read
         
         function dataOut = read(NNP, node, indexOD, subIndexOD, varargin) 
