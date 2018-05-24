@@ -13,6 +13,7 @@ classdef NNPAPI < handle
         LQI = 0;      %Link Quality Indication for last received radio mesage
         verbose = 0;   %0:no text, 1:warnings only, 2:all radio messages 
         timeout = 0.5; %timeout for response from serial port
+        lastError = [];
         % Note: 
         % 1. A weak signal in the presence of noise may give low RSSI and high LQI.
         % 2. A weak signal in "total" absence of noise may give low RSSI and low LQI.
@@ -27,27 +28,53 @@ classdef NNPAPI < handle
         % if no port is provided, a selection menu lets user select port
         
             if nargin == 0
-                serialInfo = instrhwinfo('serial');
-                if isempty(serialInfo.SerialPorts)
+                %If you have instrument control toolbox you can use the
+                %following lines instead of the system command below
+                %serialInfo = instrhwinfo('serial'); 
+                %availablePorts  = serialInfo.SerialPorts;
+                
+                try
+                    [status, result] = system('powershell [System.IO.Ports.SerialPort]::getportnames()');
+                    if status == 0 
+                        portsCell = textscan(result,'%s');
+                        availablePorts = portsCell{1};
+                    else
+                        msgbox('Could not read available ports.  Only supports Windows','NNPAPI','error')
+                    end
+                catch
+                    msgbox('Could not read available ports for unknow reason','NNPAPI','error')
+                end
+                if isempty(availablePorts)
                     msgbox('No Serial Ports Found','NNPAPI','error')
                     return
-                elseif length(serialInfo.SerialPorts) == 1
-                    port = serialInfo.SerialPorts(1);
+                elseif length(availablePorts) == 1
+                    port = availablePorts{1};
                     msgbox(['Connecting on: ' port],'NNPAPI','info')
                 else
-                    user = listdlg('ListString',serialInfo.SerialPorts,'SelectionMode', 'single', ...
+                    user = listdlg('ListString',availablePorts,'SelectionMode', 'single', ...
                         'OKstring', 'Open', 'PromptString', {'Select port for'; 'NNP Access Point'});
                     if isempty(user)
                         return
                     else
-                        port = serialInfo.SerialPorts(user);
+                        port = availablePorts{user};
                     end
                 end
             end
-                
+            
+            %close the port if already open and delete any handles to it
+            portHandles = instrfind;
+            for i=1:length(portHandles)
+                if isequal(portHandles(i).Port, port)
+                    if isequal(portHandles(i).Status, 'open')
+                        fclose(portHandles(i));
+                    end
+                    delete(portHandles(i));
+                end
+            end
+            
             NNP.port = serial(port, 'BaudRate', 115200);
             try
-                fopen(NNP.port);
+                 fopen(NNP.port);
             catch
                 msgbox(['Could not open port: ' port],'NNPAPI','error')
                 NNP.port = [];
@@ -63,13 +90,13 @@ classdef NNPAPI < handle
                 if ~isempty(NNP.port)
                     if isvalid(NNP.port)
                         fclose(NNP.port);
-                        delete(NNP.port);
                     else
-                        disp('no port to close')
+                        %disp('no port to close')
                     end
+                    delete(NNP.port);
                 end
             catch
-                disp('no port to close')
+                %disp('no port to close')
             end
         end
         
@@ -281,7 +308,7 @@ classdef NNPAPI < handle
         % 2: PM response is too short
         % 3: Radio Timeout
         % 4: Unknown response from AccessPoint
-        % 5: No response from AccessPoint
+        % 5: USB Timeout
         % 6: PM response does not echo request
         % 7: Bad CRC
         
@@ -333,6 +360,7 @@ classdef NNPAPI < handle
                                 disp(['Bad CRC:' num2str(resp(1:end), ' %02X')]');
                              end
                              errOut = 7;
+                             NNP.lastError = 'Bad CRC';
                              return;
                          end
 
@@ -348,6 +376,7 @@ classdef NNPAPI < handle
                                disp(['PM Internal/CAN error: ', num2str(resp(12:end-2),' %02X')]); 
                            end
                            errOut = 1;
+                           NNP.lastError = 'PM Internal or CAN error';
 
                         %PM response doesn't match request
                         %JML TODO: not sure all message types echo these 4 elements!
@@ -356,6 +385,7 @@ classdef NNPAPI < handle
                                 disp(['PM response does not echo request: ' num2str(resp(1:end-2), ' %02X')])
                             end
                             errOut = 6;
+                            NNP.lastError = 'PM response does not echo request';
 
                         %Expected response!
                         else 
@@ -367,6 +397,7 @@ classdef NNPAPI < handle
                             disp(['Short message: ', num2str(resp(1:end-2), ' %02X')]);
                         end
                         errOut = 2;
+                        NNP.lastError = 'PM response is too short';
                     end
 
                 %Radio timeout on AccessPoint    
@@ -375,6 +406,7 @@ classdef NNPAPI < handle
                         disp('Radio Timeout')
                     end
                     errOut = 3;
+                    NNP.lastError = 'Radio Timeout';
 
                 %Unknown response from AccessPoint
                 else
@@ -382,6 +414,7 @@ classdef NNPAPI < handle
                         disp(['Bad Response from Access Point: ', num2str(resp(1:end-2), ' %02X')]);
                     end
                     errOut = 4;
+                    NNP.lastError = 'Unknown response from AccessPoint';
                 end
 
             %No response from AccessPoint
@@ -390,6 +423,7 @@ classdef NNPAPI < handle
                     disp('No Response from Access Point');
                 end
                 errOut = 5;
+                NNP.lastError = 'USB Timeout';
             end
         
         end
@@ -403,7 +437,7 @@ classdef NNPAPI < handle
         % 2: PM response is too short
         % 3: Radio Timeout
         % 4: Unknown response from AccessPoint
-        % 5: No response from AccessPoint
+        % 5: USB Timeout
         % 6: PM response does not echo request
         % 7: Bad CRC
         
@@ -458,6 +492,7 @@ classdef NNPAPI < handle
                                 disp(['Bad CRC:' num2str(resp(1:end), ' %02X')]');
                              end
                              errOut = 7;
+                             NNP.lastError = 'Bad CRC';
                              return;
                          end
 
@@ -470,42 +505,16 @@ classdef NNPAPI < handle
                             disp(['Short message: ', num2str(resp(1:end-2), ' %02X')]);
                         end
                         errOut = 2;
+                        NNP.lastError = 'PM response is too short';
                     end
                     
-%                     if length(resp) >= 13 
-%                         %PM flagged response as error message     
-%                         if resp(7) > 127 
-%                            if NNP.verbose > 0
-%                                disp(['PM Internal/CAN error: ', num2str(resp(12:end-2),' %02X')]); 
-%                            end
-%                            errOut = 1;
-% 
-%                         %PM response doesn't match request
-%                         %JML TODO: not sure all message types echo these 4 elements!
-%                         elseif resp(4)~= protocol || resp(5)~=counter || resp(6)~=netID || resp(7)~=node
-%                             if NNP.verbose > 0
-%                                 disp(['PM response does not echo request: ' num2str(resp(1:end-2), ' %02X')])
-%                             end
-%                             errOut = 6;
-% 
-%                         %Expected response!
-%                         else 
-%                             dataRX = resp(11:end-2);
-%                             errOut = 0; 
-%                         end
-%                     else
-%                         if NNP.verbose > 0
-%                             disp(['Short message: ', num2str(resp(1:end-2), ' %02X')]);
-%                         end
-%                         errOut = 2;
-%                     end
-
                 %Radio timeout on AccessPoint    
                 elseif resp(1)==255 && length(resp)==resp(3) && length(resp)==3 && resp(2)==13
                     if NNP.verbose > 0
                         disp('Radio Timeout')
                     end
                     errOut = 3;
+                    NNP.lastError = 'Radio Timeout';
 
                 %Unknown response from AccessPoint
                 else
@@ -513,6 +522,7 @@ classdef NNPAPI < handle
                         disp(['Bad Response from Access Point: ', num2str(resp(1:end-2), ' %02X')]);
                     end
                     errOut = 4;
+                    NNP.lastError = 'Unknown response from AccessPoint';
                 end
 
             %No response from AccessPoint
@@ -521,6 +531,7 @@ classdef NNPAPI < handle
                     disp('No Response from Access Point');
                 end
                 errOut = 5;
+                NNP.lastError = 'USB Timeout'
             end
         
         end
@@ -1093,6 +1104,21 @@ classdef NNPAPI < handle
             %Enter "Produce X" Mode
             resp = NNP.nmt(0, '09'); 
             success = (resp == hex2dec('09'));
+        end
+        function success = enterLowPower(NNP, node)
+            %Enter low power.  For RM, requires Network power cycle to
+            %restore
+            resp = NNP.nmt(node, '9F'); 
+            success = (resp == hex2dec('9F'));
+        end
+        function success = enterApp(NNP, node)
+             %Wake from bootloader, 0:all, or node
+             if nargin > 1
+                resp = NNP.nmt(7, '93', node);
+             else
+                 resp = NNP.nmt(7, '93', 0);
+             end
+            success = (resp == hex2dec('93'));
         end
         function rev = getSwRev(NNP, node)    
             % Get Node's Software Revision #
