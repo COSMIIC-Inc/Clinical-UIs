@@ -908,7 +908,8 @@ classdef NNPAPI < handle
             end
             %eliminate wake interval on Access Point
             settings = NNP.getRadioSettings();
-            if settings.worInt ~= 0
+                
+            if ~isempty(settings) && settings.worInt ~= 0
                 settings.worInt = 0;
                 settingsOut = NNP.setRadioSettings(settings, false);
                 if NNP.verbose > 0 && settingsOut.worInt ~= 0
@@ -1049,27 +1050,36 @@ classdef NNPAPI < handle
         
         %% Shortcuts 
         function success = networkOn(NNP)
-            %turn ON network
+        % NETWORKON -turn ON network (must be in waiting mode)
+        % success = NETWORKON(NNP)
             resp = NNP.nmt(7, '95'); 
             success = (resp == hex2dec('95'));
         end
+        
         function success = networkOnBootloader(NNP)
-            %turn ON network and don't start RM apps
+        % NETWORKONBOOTLOADER - turn ON network, but don't start RM apps (must be in waiting mode)
+        % success = NETWORKONBOOTLOADER(NNP)
             resp = NNP.nmt(7, 'A0'); 
             success = (resp == hex2dec('A0'));
         end
+        
         function success = networkOff(NNP)
-             %turn OFF network 
+        % NETWORKOFF -turn OFF network (must be in waiting mode)
+        % success = NETWORKOFF(NNP)
             resp = NNP.nmt(7, '96');
             success = (resp == hex2dec('96'));
         end
+        
         function success = enterWaiting(NNP)
-            %Enter Waiting
+        % ENTERWAITING - Enter Waiting
+        % success = ENTERWAITING(NNP)
             resp = NNP.nmt(0, '07'); 
             success = (resp == hex2dec('07'));
         end
+        
         function success = enterPatient(NNP, pattern)
-            %Enter Patient Mode
+        %ENTERPATIENT - Enter Patient Mode
+        % success = ENTERPATIENT(NNP) 
             if nargin > 1
                 resp = NNP.nmt(0, '03', pattern); 
             else
@@ -1077,8 +1087,17 @@ classdef NNPAPI < handle
             end
             success = (resp == hex2dec('03'));
         end
+        
         function success = enterTestStim(NNP, mode)
-            %Enter "Y Manual" Mode
+        % ENTERTESTSTIM - Enter "Y Manual" Mode
+        % success = ENTERTESTSTIM(NNP) 
+        %     stim values are set in PG 3212.1-4 directly
+        % success = ENTERTESTSTIM(NNP, mode)
+        %     mode = 0: stim values are set in PG 3212.1-4 directly
+        %     mode = 1: stim values are set in PM, PDOs must be mapped
+        %     appropriately
+        %     mode = 2: same as 1 but updates only occur if change has
+        
             if nargin > 1
                 resp = NNP.nmt(0, '05', mode); 
             else
@@ -1086,8 +1105,12 @@ classdef NNPAPI < handle
             end
             success = (resp == hex2dec('05'));
         end
+        
         function success = enterTestPatterns(NNP, pattern)
-             %Enter "X Manual" Mode
+        %ENTERTESTPATTERNS - Enter "X Manual" Mode
+        % success = ENTERTESTPATTERNS(NNP)
+        %   follow up with activating specific patterns 
+        % success = ENTERTESTPATTERNS(NNP, pattern) activates specified pattern
             if nargin > 1
                 resp = NNP.nmt(0, '04', pattern);
             else
@@ -1095,24 +1118,32 @@ classdef NNPAPI < handle
             end
             success = (resp == hex2dec('04'));
         end
+        
         function success = enterTestRaw(NNP, node, ch) 
-            %Enter Raw MES Mode
+        % ENTERTESTRAW - Enter Raw MES Mode
+        % success = ENTERTESTRAW(NNP, node, ch)
             resp = NNP.nmt(0, '0C', node+(ch-1)*16); 
             success = (resp == hex2dec('0C'));
         end
+        
         function success = enterTestFeatures(NNP)
-            %Enter "Produce X" Mode
+        %ENTERTESTFEATURES - Enter "Produce X" Mode
+        % success = ENTERTESTFEATURES(NNP)
             resp = NNP.nmt(0, '09'); 
             success = (resp == hex2dec('09'));
         end
+        
         function success = enterLowPower(NNP, node)
-            %Enter low power.  For RM, requires Network power cycle to
-            %restore
+        % ENTERLOWPOWER - Enter low power.  For RM, requires Network power cycle to restore
+        % success = ENTERLOWPOWER(NNP, node)
             resp = NNP.nmt(node, '9F'); 
             success = (resp == hex2dec('9F'));
         end
+        
         function success = enterApp(NNP, node)
-             %Wake from bootloader, 0:all, or node
+        % ENTERAPP - Wake from bootloader
+        % success = ENTERAPP(NNP) wakes all
+        % success = ENTERAPP(NNP, node) wakes selected node or all if node = 0
              if nargin > 1
                 resp = NNP.nmt(7, '93', node);
              else
@@ -1120,27 +1151,35 @@ classdef NNPAPI < handle
              end
             success = (resp == hex2dec('93'));
         end
+        
         function rev = getSwRev(NNP, node)    
-            % Get Node's Software Revision #
+        %GETSWREV Get Node's Software Revision #
+        % rev = GETSWREV(NNP, node) 
            rev = double(NNP.read(node, '1018', 3, 'uint32')); % rev
         end
-        function sn = getSerial(NNP, node)    
-            % Get Node's PCB Serial Number #
+        
+        function sn = getSerial(NNP, node)  
+        %GETSERIAL Get Node's  PCB Serial Number #
+        % sn = GETSERIAL(NNP, node) 
            sn = double(NNP.read(node, '1018', 4, 'uint32')); % pcb serial number
         end
+        
         function success = setVNET(NNP, V) 
-            % Set PM Network Voltage. V in Volts
+        %SETVNET Set PM Network Voltage. 
+        %success = SETVNET(NNP, V) V in volts
             if V < 4.6 || V > 9.5
                 error('Voltage out of range: must be between 4.6 and 9.5V')
             end
             resp = NNP.write(7, '3010', 0, uint8(V*10), 'uint8'); %VNET
             success = (resp == 0);
         end
+        
         function vnet = getVNET(NNP) 
             % Get PM Network Voltage. V in Volts
             vnet = double(NNP.read(7, '3010', 0, 'uint8'))/10; %VNET
         end
-        function temp = getTemp(NNP, node) 
+        
+        function temp = getTemp(NNP, node)
             % Get Temp in deg C
             resp = NNP.read(node, '2003', 1, 'uint16'); 
             if length(resp) == 1
@@ -1149,6 +1188,7 @@ classdef NNPAPI < handle
                 temp = [];
             end
         end
+        
         function [accel, cnt, mag] = getAccel(NNP, node)
             %Get accel in g's
             temp = NNP.read(node, '2011', 1, 'uint8'); %
@@ -1171,18 +1211,19 @@ classdef NNPAPI < handle
                 mag = [];
             end
         end
-        function success = setMESgain(NNP, node, ch, gain) 
-            %Set MES gain 
-            if ch == 1
-                Index = '3411';
-            elseif ch ==2
-                Index = '3511';
-            else
-                error('Incorrect Channel: must be 1 or 2')
-            end
-            resp = NNP.write(node, Index, 1, uint8(gain), 'uint8');
-            success = (resp == 0);
+        
+        function success = setBPGains(NNP, node, ch1, ch2)
+            %success = SETBPGAINS(NNP, node, ch1, ch2)
+            resp = NNP.nmt(node, 'D0', ch1, ch2);
+            success = (resp == hex2dec('D0'));
         end
+        
+        function [ch1, ch2] = getBPGains(NNP, node)
+            %[ch1, ch2] = GETBPGAINS(NNP, node)
+            ch1 = double(NNP.read(node, '3411', 1));
+            ch2 = double(NNP.read(node, '3511', 1));
+        end
+        
         function stacks = checkPMStacks(NNP)
             %Check PM Task stacks
             stacks = double(NNP.read(7, '3030', 1,9,'uint8'));
@@ -1222,6 +1263,54 @@ classdef NNPAPI < handle
         end
         function status = getNetworkStatus(NNP)
             status = double(NNP.read(7, '3004', 1));
+        end
+        
+        function [modes, temp, vsys, net, rssi, lqi, group, lpm] = getStatus(NNP, nodes)
+        %GETSTATUS 
+            resp = double(NNP.nmt(7,'10'));
+            if nargin == 1
+                nodes = 1:15;
+            end
+                
+            if length(resp) == 29
+                modes = cell(length(nodes),1); 
+                for i=nodes
+                    switch resp(i+1)
+                        case 1,   mode = 'Waiting';
+                        case 2,   mode = 'TestPatterns';
+                        case 3,   mode = 'TestStim';                                          
+                        case 4,   mode = 'Stopped';
+                        case 5,   mode = 'Patient';
+                        case 6,   mode = 'BootCheckReset';
+                        case 7,   mode = 'Test Patient Mode';
+                        case 8,   mode =  'Test Features';
+                        case 9,   mode = 'Test Raw';
+                        case 10,   mode = 'Charging';
+                        case 15,   mode =  'Not Connected';
+                        otherwise,  mode = 'Unknown';
+                    end
+                    modes{i} = mode;
+                end
+                rssi = resp(21);
+                        %TODO: convert from raw
+                lqi = resp(22);
+                        %TODO: convert from raw
+                net = resp(23);
+                vsys = (resp(24) + resp(25)*256)/10;
+                group = resp(26);
+                temp = (resp(27) + resp(28)*256)/10;
+                lpm = resp(29);
+                        %TODO: ?
+            else
+                 modes = [];
+                 rssi = [];
+                 lqi = [];
+                 net = [];
+                 vsys = [];
+                 group = [];
+                 temp = [];
+                 lpm = [];               
+            end
         end
     end
 end
