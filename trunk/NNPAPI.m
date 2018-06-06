@@ -1274,6 +1274,7 @@ classdef NNPAPI < handle
                 
             if length(resp) == 29
                 modes = cell(length(nodes),1); 
+                k=1;
                 for i=nodes
                     switch resp(i+1)
                         case 1,   mode = 'Waiting';
@@ -1289,7 +1290,8 @@ classdef NNPAPI < handle
                         case 15,   mode =  'Not Connected';
                         otherwise,  mode = 'Unknown';
                     end
-                    modes{i} = mode;
+                    modes{k} = mode;
+                    k=k+1;
                 end
                 rssi = resp(21);
                         %TODO: convert from raw
