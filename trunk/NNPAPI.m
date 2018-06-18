@@ -1164,6 +1164,12 @@ classdef NNPAPI < handle
            sn = double(NNP.read(node, '1018', 4, 'uint32')); % pcb serial number
         end
         
+        function type = getType(NNP, node)  
+        %GETTYPE Get Node's  Type
+        % type = GETTYPE(NNP, node) 
+           type = NNP.read(node, '1008', 0, 'string'); 
+        end
+        
         function success = setVNET(NNP, V) 
         %SETVNET Set PM Network Voltage. 
         %success = SETVNET(NNP, V) V in volts
