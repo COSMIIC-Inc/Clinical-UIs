@@ -30,19 +30,21 @@ classdef NNPAPI < handle
             if nargin == 0
                 %If you have instrument control toolbox you can use the
                 %following lines instead of the system command below
-                %serialInfo = instrhwinfo('serial'); 
-                %availablePorts  = serialInfo.SerialPorts;
-                
                 try
-                    [status, result] = system('powershell [System.IO.Ports.SerialPort]::getportnames()');
-                    if status == 0 
-                        portsCell = textscan(result,'%s');
-                        availablePorts = portsCell{1};
-                    else
-                        msgbox('Could not read available ports.  Only supports Windows','NNPAPI','error')
-                    end
+                    serialInfo = instrhwinfo('serial'); 
+                    availablePorts  = serialInfo.SerialPorts;
                 catch
-                    msgbox('Could not read available ports for unknow reason','NNPAPI','error')
+                    try
+                        [status, result] = system('powershell [System.IO.Ports.SerialPort]::getportnames()');
+                        if status == 0 
+                            portsCell = textscan(result,'%s');
+                            availablePorts = portsCell{1};
+                        else
+                            msgbox('Could not read available ports.  Only supports Windows','NNPAPI','error')
+                        end
+                    catch
+                        msgbox('Could not read available ports for unknow reason','NNPAPI','error')
+                    end
                 end
                 if isempty(availablePorts)
                     msgbox('No Serial Ports Found','NNPAPI','error')

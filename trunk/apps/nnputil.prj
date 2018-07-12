@@ -1,5 +1,5 @@
 <deployment-project plugin="plugin.ezdeploy" plugin-version="1.0">
-  <configuration build-checksum="1663187145" file="C:\Users\Joris\Documents\Repositories\NNP\matlabapi\trunk\apps\nnputil.prj" location="C:\Users\Joris\Documents\Repositories\NNP\matlabapi\trunk\apps" name="nnputil" preferred-package-location="C:\Users\Joris\Documents\Repositories\NNP\matlabapi\trunk\apps\nnputil\for_redistribution" preferred-package-type="package.type.exe" target="target.ezdeploy.standalone" target-name="Application Compiler">
+  <configuration build-checksum="429474193" file="C:\Users\Joris\Documents\Repositories\NNP\matlabapi\trunk\apps\nnputil.prj" location="C:\Users\Joris\Documents\Repositories\NNP\matlabapi\trunk\apps" name="nnputil" preferred-package-location="C:\Users\Joris\Documents\Repositories\NNP\matlabapi\trunk\apps\nnputil\for_redistribution" preferred-package-type="package.type.exe" target="target.ezdeploy.standalone" target-name="Application Compiler">
     <param.appname>nnputil</param.appname>
     <param.icon>${PROJECT_ROOT}\nnputil_resources\icon.ico</param.icon>
     <param.icons>
@@ -8,7 +8,7 @@
       <file>${PROJECT_ROOT}\nnputil_resources\icon_24.png</file>
       <file>${PROJECT_ROOT}\nnputil_resources\icon_16.png</file>
     </param.icons>
-    <param.version>1.012</param.version>
+    <param.version>1.013</param.version>
     <param.authnamewatermark>JML</param.authnamewatermark>
     <param.email>joris@case.edu</param.email>
     <param.company>Cleveland FES Center</param.company>
