@@ -176,6 +176,11 @@ classdef NNPAPI < handle
                 error('Radio settings must be listed in Pairs')
             end
             settingsIn = NNP.getRadioSettings();
+            if isempty(settingsIn)
+                success = 0; 
+                settings = [];
+                return;
+            end
             save = false;
             
             for i = 1:2:nargin-2 
