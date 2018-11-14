@@ -51,7 +51,7 @@ classdef NNPAPI < handle
                     return
                 elseif length(availablePorts) == 1
                     port = availablePorts{1};
-                    msgbox(['Connecting on: ' port],'NNPAPI','info')
+                    msgbox(['Connecting on: ' port],'NNPAPI','help')
                 else
                     user = listdlg('ListString',availablePorts,'SelectionMode', 'single', ...
                         'OKstring', 'Open', 'PromptString', {'Select port for'; 'NNP Access Point'});
@@ -1222,6 +1222,22 @@ classdef NNPAPI < handle
                 accel = [];
                 cnt = [];
                 mag = [];
+            end
+        end
+        
+        function power = getPower(NNP)
+            %power = GETPOWER(NNP)
+            %read system power into/out of PM battery  
+            %negative is discharging batteries, positive is charging
+            %batteries
+            bat = double(NNP.read(7, '3000', 13, 'uint8'));
+            if isempty(bat)
+                power = [];
+            else
+                batV = [bat( 7)+bat( 8)*256, bat( 9)+bat(10)*256, bat(11)+bat(12)*256]; %in mV
+                batI = uint16([bat(15)+bat(16)*256, bat(17)+bat(18)*256, bat(19)+bat(20)*256]);
+                batI = double(typecast(batI, 'int16'))/10; %in mA
+                power = round(sum(batI.*batV)/1000); %in mW
             end
         end
         
