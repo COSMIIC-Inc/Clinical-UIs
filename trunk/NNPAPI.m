@@ -1322,10 +1322,21 @@ classdef NNPAPI < handle
                     modes{k} = mode;
                     k=k+1;
                 end
-                rssi = resp(21);
+                rssiraw = resp(21);
                         %TODO: convert from raw
-                lqi = resp(22);
-                        %TODO: convert from raw
+                lqiraw = resp(22);
+                                rssioffset = 74;
+                   
+                 if rssiraw < 128
+                     rssi = rssiraw/2 - rssioffset;
+                 else
+                     rssi = (rssiraw-256)/2 - rssioffset;
+                 end
+                 if lqiraw >= 128
+                    lqi = lqiraw - 128;
+                 else
+                    lqi = lqiraw; %bad CRC
+                 end
                 net = resp(23);
                 vsys = (resp(24) + resp(25)*256)/10;
                 group = resp(26);
