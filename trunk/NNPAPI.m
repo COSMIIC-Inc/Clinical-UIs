@@ -1,7 +1,6 @@
 classdef NNPAPI < handle
     %NNPAPI Interface to the NNP via the AccessPoint
-    %
-    % JML 20180321
+    % Updated: 20190430 JML
     
     properties (Access = private)
         cancelRead = false;
@@ -280,6 +279,7 @@ classdef NNPAPI < handle
         
         function [sw, hw] = getAPRev(NNP)
         % GETAPREV - Reads AccessPoint SW/HW Rev
+        % [sw, hw] = GETAPREV(NNP)
             sw = []; %initialize output
             hw = [];
             
@@ -859,7 +859,7 @@ classdef NNPAPI < handle
         %% Wake On Radio
         
         function success = worOn(NNP, wakeInterval )
-        %WORON - Sets PM to "Wake On Radio" mode and enables long preambles on Access Point
+        % WORON - Sets PM to "Wake On Radio" mode and enables long preambles on Access Point
         %  using the specified wake interval (in ms).  
         %   Longer wake interval results in lower power consumption but 
         %   lower maximum bandwidth and higher latency.  
@@ -897,7 +897,7 @@ classdef NNPAPI < handle
         end
 
         function success = worOff( NNP )
-        %WOROFF - turns off "Wake On Radio" on PM and turns off long preamble on Access Point
+        % WOROFF - turns off "Wake On Radio" on PM and turns off long preamble on Access Point
         %   Significantly increases PM power consumption but maximizes
         %   max radio bandwidth and minimizes latency
 
@@ -928,13 +928,34 @@ classdef NNPAPI < handle
         
         %% Read File
         function cancelReadFile(obj, event, NNP)
+        % CANCELREADFILE - not implemented
+        % 
             disp('cancel')
             NNP.cancelRead = true;
         end
         
         function dataOut = readFile( NNP, file, address, len, print, fileOut)
-        %READFILE - Read PM Log or OD Restore file
-        %   
+        % READFILE - Read PM Log or OD Restore file
+        % dataOut = READFILE( NNP, file, address, len) does not print to
+        % command line or file
+        % dataOut = READFILE( NNP, file, address, len, print) prints to
+        % command line
+        % dataOut = READFILE( NNP, file, address, len, print, fileOut)
+        % file: 'log', 'Log', or 1 - Log file
+        %       'param', 'odrestore', 'OD Restore', or 2 - OD Restore file
+        % address: starting address within file (0 to start at beginning)
+        % len: length to read, or 'all' to read entire file
+        % print: format to print to file or command line:
+        %        'ascii', 'ASCII', or 1 to print as ASCII
+        %        'bin', 'binary', 'Bin', 'Binary', or 2 to print in binary
+        %        format
+        %        'hex', or 'Hex', or 3 to convert to Hex (as ASCII)
+        %        0 - don't print to command line
+        %fileOut: file to write to
+        %
+        %datOut contains all data read from file
+        
+        
         dataOut = [];
 
         if nargin < 6
@@ -1085,7 +1106,7 @@ classdef NNPAPI < handle
         end
         
         function success = enterPatient(NNP, pattern)
-        %ENTERPATIENT - Enter Patient Mode
+        % ENTERPATIENT - Enter Patient Mode
         % success = ENTERPATIENT(NNP) 
             if nargin > 1
                 resp = NNP.nmt(0, '03', pattern); 
@@ -1114,7 +1135,7 @@ classdef NNPAPI < handle
         end
         
         function success = enterTestPatterns(NNP, pattern)
-        %ENTERTESTPATTERNS - Enter "X Manual" Mode
+        % ENTERTESTPATTERNS - Enter "X Manual" Mode
         % success = ENTERTESTPATTERNS(NNP)
         %   follow up with activating specific patterns 
         % success = ENTERTESTPATTERNS(NNP, pattern) activates specified pattern
@@ -1160,27 +1181,27 @@ classdef NNPAPI < handle
         end
         
         function rev = getSwRev(NNP, node)    
-        %GETSWREV Get Node's Software Revision #
+        % GETSWREV Get Node's Software Revision #
         % rev = GETSWREV(NNP, node) 
            rev = double(NNP.read(node, '1018', 3, 'uint32')); % rev
         end
         
         function sn = getSerial(NNP, node)  
-        %GETSERIAL Get Node's  PCB Serial Number #
+        % GETSERIAL Get Node's  PCB Serial Number #
         % sn = GETSERIAL(NNP, node) 
            sn = double(NNP.read(node, '1018', 4, 'uint32')); % pcb serial number
         end
         
         function type = getType(NNP, node)  
-        %GETTYPE Get Node's  Type
+        % GETTYPE Get Node's  Type
         % type = GETTYPE(NNP, node) 
            type = NNP.read(node, '1008', 0, 'string'); 
         end
         
         function success = setVNET(NNP, V) 
-        %SETVNET Set PM Network Voltage. 
-        %success = SETVNET(NNP, V) V in volts
-            if V < 4.6 || V > 9.5
+        % SETVNET Set PM Network Voltage (in Volts).  Range 4.7-9.5
+        % success = SETVNET(NNP, V) 
+            if V < 4.7 || V > 9.5
                 error('Voltage out of range: must be between 4.6 and 9.5V')
             end
             resp = NNP.write(7, '3010', 0, uint8(V*10), 'uint8'); %VNET
@@ -1188,12 +1209,14 @@ classdef NNPAPI < handle
         end
         
         function vnet = getVNET(NNP) 
-            % Get PM Network Voltage. V in Volts
+        % GETVNET Get PM Network Voltage (in Volts)
+        % vnet = GETVNET(NNP)
             vnet = double(NNP.read(7, '3010', 0, 'uint8'))/10; %VNET
         end
         
         function temp = getTemp(NNP, node)
-            % Get Temp in deg C
+        % GETTEMP Get temperature for specified node(in deg C)
+        % temp = GETTEMP(NNP, node) 
             resp = NNP.read(node, '2003', 1, 'uint16'); 
             if length(resp) == 1
                 temp = double(resp)/10;
@@ -1203,7 +1226,9 @@ classdef NNPAPI < handle
         end
         
         function [accel, cnt, mag] = getAccel(NNP, node)
-            %Get accel in g's
+        % GETACCEL
+        % accel = GETACCEL(NNP, node) returns accelerometer value (in g's) for specified node 
+        % [accel, cnt, mag] = GETACCEL(NNP, node) also returns cnt and magnitude
             temp = NNP.read(node, '2011', 1, 'uint8'); %
             if length(temp)==4
                 if all(temp==255)
@@ -1226,12 +1251,14 @@ classdef NNPAPI < handle
         end
         
         function power = getPower(NNP)
-            %power = GETPOWER(NNP)
-            %read system power into/out of PM battery  
-            %negative is discharging batteries, positive is charging
-            %batteries
+        % power = GETPOWER(NNP)
+        % read system power into/out of PM battery  
+        % negative is discharging batteries, positive is charging
+        % batteries.  This is a 5s average.  Due to other update
+        % asynchronicities, the power may only reach steady state after
+        % 12s following a transition
             bat = double(NNP.read(7, '3000', 13, 'uint8'));
-            if isempty(bat)
+            if length(bat)<20
                 power = [];
             else
                 batV = [bat( 7)+bat( 8)*256, bat( 9)+bat(10)*256, bat(11)+bat(12)*256]; %in mV
@@ -1242,60 +1269,93 @@ classdef NNPAPI < handle
         end
         
         function success = setBPGains(NNP, node, ch1, ch2)
-            %success = SETBPGAINS(NNP, node, ch1, ch2)
+        % SETBPGAINS Sets gain wiper setting for both channels for specified node
+        % success = SETBPGAINS(NNP, node, ch1, ch2)
             resp = NNP.nmt(node, 'D0', ch1, ch2);
             success = (resp == hex2dec('D0'));
         end
         
         function [ch1, ch2] = getBPGains(NNP, node)
-            %[ch1, ch2] = GETBPGAINS(NNP, node)
+        % GETBPGAINS Returns gain wiper setting for both channels
+        % [ch1, ch2] = GETBPGAINS(NNP, node)
             ch1 = double(NNP.read(node, '3411', 1));
             ch2 = double(NNP.read(node, '3511', 1));
         end
         
         function stacks = checkPMStacks(NNP)
-            %Check PM Task stacks
+        % CHECKPMSTACKS Returns the stack usage for the 9 tasks running on PM (in %).
+        % stacks = CHECKPMSTACKS(NNP)
+        % 1. App
+        % 2. CAN Server
+        % 3. CAN Timer
+        % 4. IO Scan
+        % 5. Sleep
+        % 6. Script
+        % 7. Tick
+        % 8. Idle
+        % 9. Stats
             stacks = double(NNP.read(7, '3030', 1,9,'uint8'));
         end
         function success = saveOD(NNP, node)
-            %Save Node's OD
+        % success = SAVEOD(NNP)
+        % Save Node's OD
             resp = NNP.nmt(node, '0A');
             success = (resp == hex2dec('0A'));
         end
         function success = resetPM(NNP)
-            %Reset PM
+        % RESETPM Turns off PM, require coil to restart
+        % success = RESETPM(NNP)
             resp = NNP.nmt(7, '9E'); 
             success = (resp == hex2dec('9E'));
         end
         function success = setSync(NNP, T) 
-            %Set PM sync interval (in ms)
+        % SETSYNC Set PM sync interval (in ms)
+        % success = SETSYNC(NNP, T) 
             resp = NNP.write(7, '1006', 0, uint32(T), 'uint32'); 
             success = (resp == 0);
         end
         function T = getSync(NNP) 
-            %Get PM sync interval (in ms)
+        % GETSYNC Get PM sync interval (in ms)
+        % T = GETSYNC(NNP) 
             T = double(NNP.read(7, '1006', 0, 'uint32')); 
         end
         function success = flushLog(NNP)
-            % Clear the PM Log space
+        % FLUSHLOG Clear the PM Log space
+        % success = FLUSHLOG(NNP)
             resp = NNP.nmt(7,'B8',1);
             success = (resp == hex2dec('B8'));
         end
         function success = initDirectory(NNP) %JML: do we need this?
-            % Initialize the PM Log directory
+        % INITDIRECTORY Initialize the PM Log directory
+        % success = INITDIRECTORY(NNP)
             resp = NNP.nmt(7,'B9');
             success = (resp == hex2dec('B9'));
         end
         function A = getLogCursor(NNP)  
-            % Get PM Log cursor position (remote flash address)
+        % GETLOGCURSOR Get PM Log cursor position (remote flash address)
+        % A = GETLOGCURSOR(NNP)  
             A = double(NNP.read(7,'a200', 3, 'uint32'));
         end
         function status = getNetworkStatus(NNP)
+        % GETNETWORKSTATUS returns whteher netowrk is on (1) or off (0)
+        % status = getNetworkStatus(NNP)
             status = double(NNP.read(7, '3004', 1));
         end
         
         function [modes, temp, vsys, net, rssi, lqi, group, lpm] = getStatus(NNP, nodes)
-        %GETSTATUS 
+        % GETSTATUS Return node table and other PM status information 
+        % modes = GETSTATUS(NNP) returns entire node table (15 nodes)
+        % modes = GETSTATUS(NNP, nodes) returns mode for specified nodes
+        % [modes, temp, vsys, net, rssi, lqi, group, lpm] = getStatus(NNP, nodes)
+        % modes: list of modes for each node (string) 
+        % temp: temperature (in degC)
+        % vsys: system Voltage (Volts)
+        % net: network status (1=on, 0=off)
+        % rssi: PM radio RSSI (in dBm)
+        % lqi: PM radio LQI
+        % group: active function group
+        % lpm: Low Power Mode Status
+        
             resp = double(NNP.nmt(7,'10'));
             if nargin == 1
                 nodes = 1:15;
@@ -1323,9 +1383,8 @@ classdef NNPAPI < handle
                     k=k+1;
                 end
                 rssiraw = resp(21);
-                        %TODO: convert from raw
                 lqiraw = resp(22);
-                                rssioffset = 74;
+                rssioffset = 74;
                    
                  if rssiraw < 128
                      rssi = rssiraw/2 - rssioffset;
@@ -1342,7 +1401,6 @@ classdef NNPAPI < handle
                 group = resp(26);
                 temp = (resp(27) + resp(28)*256)/10;
                 lpm = resp(29);
-                        %TODO: ?
             else
                  modes = [];
                  rssi = [];
