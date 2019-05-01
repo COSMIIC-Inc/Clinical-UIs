@@ -641,7 +641,13 @@ classdef NNPAPI < handle
                 if strcmpi(readType, 'string')
                     dataOut = char(typecast(dataRX(2:end), 'uint8')); %first byte is length byte
                 else
-                    dataOut = typecast(dataRX(2:end), readType); %first byte is length byte
+                    try
+                        dataOut = typecast(dataRX(2:end), readType); %first byte is length byte
+                    catch
+                        dataOut = [];
+                        warning(['data was available but could not be typecast into specified type:'...
+                            sprintf('%02X ', dataRX(2:end))]);
+                    end
                 end
             end
         end
@@ -672,7 +678,8 @@ classdef NNPAPI < handle
         %             use 'uint8' for bytearrays
         %              (default = 'uint8')
         % Output:
-        % dataOut:    Object Dictionary entry cast to the specified writeType
+        % dataOut:    Object Dictionary write response.  0 is correct response
+        % 
         %
         %NOTE: assumes little-endian processor for byte conversions to uint16, uint32, etc.
         %use: <code> [str,maxsize,endian] = computer </code>  to check your system
