@@ -1,0 +1,4 @@
+Clinical Suite notes
+Open this to take notes of what I want to change as I work with the suite.
+
+in MES recording app, need to add Netork On button for accelerometers, since I turn Off the network when stopping the emg recording
