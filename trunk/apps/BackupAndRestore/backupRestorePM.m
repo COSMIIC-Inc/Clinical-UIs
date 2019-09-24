@@ -187,7 +187,9 @@ function result = backupRestorePM(nnp, varargin)
     if read
         result = restoreBytes;
     else
-        result = k-1;
+        if saveOD(7)
+            result = k-1;
+        end
     end
     toc
 end
