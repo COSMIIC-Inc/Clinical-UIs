@@ -10,8 +10,10 @@ function result = backupRestoreRM(nnp, nodes, varargin)
 % result is success for each node
 %
 
-    nnp.networkOff
+    nnp.networkOff;
+    pause(.5);
     nnp.networkOnBootloader;
+    pause(1);
     %
     % startAddress = 0;
     % endAddress= 4096;
