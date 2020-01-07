@@ -1,6 +1,6 @@
 close all
 
-fid = fopen('logdata.nnps', 'r');
+fid = fopen('logdata_2.nnps', 'r');
 
 
 %%
@@ -16,7 +16,7 @@ fid = fopen('logdata.nnps', 'r');
 % si_... starting index
 % ei_... ending index
 
-vartypelist = {'uint8','int8','uint16','int16','uint32','int32','string','ba','fixp','define'};
+vartypelist = {'uint8','int8','uint16','int16','uint32','int32','string','ba','fixp'};
 varscopelist = {'stack', 'global', 'const'};
 
 %opcode name, opcode byte, min operands, max operands, description,
@@ -133,7 +133,7 @@ opcodelist = { ...
     'VECSUB',122,2,2, 'VectorA - VectorB (or scalar)->Vector',1,0,0;
     'VECMUL',123,2,2, 'VectorA (elementwise*) VectorB (or scalar)->Vector',1,0,0;
     'VECDIV',124,2,2, 'VectorA (elementwise/) VectorB (or scalar)->Vector',1,0,0;
-    'EXIT',255,0,0, 'Terminate Script',0,0,0}
+    'EXIT',255,0,0, 'Terminate Script',0,0,0};
 
 %% For Noptepad++ keywords
 opcodelistStr = [];
@@ -163,8 +163,17 @@ operation = struct('index',[],'line', [],'opCodeName','','opCodeByte','','operan
 i_op = 0;
 var = struct('name','','line', [],'type','','scope','', 'initStr', '', 'init', [], 'array', [], 'pointer',[]);
 i_var = 0;
-i_label = 0;
+
+def = struct('name','','line',[],'replace','');
+def(1).name = 'log';     def(1).replace = 'N7<L,0>:A000.1'; %log without timestamp
+def(2).name = 'timelog'; def(2).replace = 'N7<L,1>:A000.1'; %log with timestamp
+%Can add additional predefined things here
+i_def = length(def);
+
+
 label = {};
+i_label = 0;
+
 
 
 for i = 1:nLines
@@ -179,9 +188,8 @@ for i = 1:nLines
     if ~isempty(ei_comment) && si_comment == 1 %comment begins at beginning, don't do further parsing
         formattedtext=[formattedtext '<FONT COLOR="green"><i>' A{i} '</i></HTML>'];
     else
-        
         if ~isempty(si_comment)
-            A{i}=[A{i}(1:si_comment-1) ' ' A{i}(si_comment:ei_comment )]; %add a space at the end of the line - required to detect final operand
+            A{i}=[A{i}(1:si_comment-1) ' ' A{i}(si_comment:end)]; %add a space prior to comment '%' - required to detect final operand
             endparse = si_comment - 1 + 1; %include added space
             si_comment = si_comment + 1;
             ei_comment = ei_comment + 1;
@@ -195,11 +203,12 @@ for i = 1:nLines
         %find result, if any
         [si_result, ei_result] = regexp(A{i}(startparse:endparse), '=>.+'); %result: '=>' followed by anything. Don't include optional whitespace before '>' (will go to preceding opcode/operand)
         if ~isempty(si_result)
-            endparse = si_result - 1;
+            A{i}=[A{i}(1:si_result-1) ' ' A{i}(si_result:end )]; %add a space prior to resultsymbol '=>' - required to detect final operand
+            endparse = si_result - 1+1; %include added space
+            si_resultsymbol = si_result + 1;
+            ei_resultsymbol = si_result + 2;
+            si_result = si_result + 3;
             
-            si_resultsymbol = si_result;
-            ei_resultsymbol = si_result + 1;
-            si_result = si_result + 2;
         else
             si_resultsymbol = [];
             ei_resultsymbol = [];
@@ -209,7 +218,11 @@ for i = 1:nLines
         %find a variable initializer, if any
         [si_varinit, ei_varinit] = regexp(A{i}(startparse:endparse), '=[^>].*'); % '=' followed by anything except >
         if ~isempty(ei_varinit)
-            endparse = si_varinit-1;
+            A{i}=[A{i}(1:si_varinit-1) ' ' A{i}(si_varinit:end )]; %add a space prior to initializer '='  - required to detect final operand
+            endparse = si_varinit - 1 + 1; %include added space
+            si_varinit = si_varinit + 1;
+            ei_varinit = ei_varinit + 1;
+
         end
         
         
@@ -235,8 +248,13 @@ for i = 1:nLines
         end
         
         
-        %find opcode, if any
-        [si_op, ei_op] = regexp(A{i}(startparse:endparse), '\s*\S+\s+'); %optional whitespace, at least one non whitespace, at least one whitespace
+        %find opcode, operand, variable type/scope, name, or define, define name
+        % these are seperated by whitespace. However, we want to ignore whitespace contained within "", [], !!
+        
+        % ? . * [ ] { } ( ) ^ + | are used in regular expressions.  To use literally, preface with \
+        
+        %optional whitespace, followed by literal that may include spaces ("...", [...], !...!), or  at least one non whitespace, and ending in at least one whitespace
+        [si_op, ei_op] = regexp(A{i}(startparse:endparse), '\s*((".*?")|(<.*?>)|(\[.*?\])|(!.*?!)|\S+)\s+'); 
         si_op = startparse-1+si_op;
         ei_op = startparse-1+ei_op;
         
@@ -260,8 +278,15 @@ for i = 1:nLines
             opStr = strtrim(A{i}(si_op(1):ei_op(1)));
             [isOp, whichOp] = ismember(opStr, opcodelist(:,1));
             isVar = ismember(opStr, vartypelist) || ismember(opStr, varscopelist);
+            isDef = isequal(opStr, 'define'); 
             
-            if isOp
+            if isDef
+                i_def=i_def+1;
+                def(i_def).line = i;
+                si_vartypescope = si_op(1); %add define color?
+                ei_vartypescope = ei_op(1);
+                
+            elseif isOp
                 i_op = i_op + 1;
                 operation(i_op).index = whichOp;
                 operation(i_op).line = i;
@@ -281,8 +306,9 @@ for i = 1:nLines
                 else
                     var(i_var).scope = opStr;
                 end
+                
             else
-                warnStr=addText(warnStr, 'unknown opCode, line ignored');
+                warnStr=addText(warnStr, 'unknown opCode or variable definition, line ignored');
                 si_unknown = si_op(1);
                 ei_unknown = ei_op(end);
                 ei_op = [];
@@ -290,9 +316,35 @@ for i = 1:nLines
             end
             if length(si_op) > 1
                 opStr = strtrim(A{i}(si_op(2):ei_op(2)));
-                
+                if isDef
+                    if ~isempty(ei_varinit)
+                        if i_def > 0
+                            defnames = arrayfun(@(x) x.name, def(1:end-1), 'UniformOutput', false);
+                        else
+                            defnames = [];
+                        end
+                        if ismember(opStr, defnames)
+                            def(i_def) = [];
+                            i_def=i_def-1;
+                            warnStr=addText(warnStr, 'define name previously used, ignored');
+                        else
+                            def(i_def).name = opStr;
+                            def(i_def).replace = strtrim(A{i}(si_varinit+1:ei_varinit)); %scrap '=' and trim white space
+                        end
+                    else
+                        def(i_def) = [];
+                        i_def=i_def-1;
+                        warnStr=addText(warnStr, 'define has no definition, ignored');
+                    end
+                    si_var = si_op(2); %add color type for def?
+                    ei_var = ei_op(2);
+                    if length(si_op) > 2
+                        warnStr=addText(warnStr,'ignoring extra content');
+                        si_unknown = si_op(3);
+                        ei_unknown = ei_op(end);
+                    end
                 %variable must have at least scope or type, but can have one or both
-                if isVar && (ismember(opStr, vartypelist) || ismember(opStr, varscopelist))
+                elseif isVar && (ismember(opStr, vartypelist) || ismember(opStr, varscopelist))
                     if ismember(opStr, vartypelist)
                         if isempty(var(i_var).type)
                             var(i_var).type = opStr;
@@ -429,8 +481,14 @@ for i = 1:nLines
                     end
                 end
             else %Operand or Variable definition but nothing further
-                if isVar
+                if isDef
+                    warnStr=addText(warnStr,'No define name, ignored');
+                    def(i_def) = [];
+                    i_def=i_def-1;
+                elseif isVar
                     warnStr=addText(warnStr,'No variable name, ignored');
+                    var(i_var) = [];
+                    i_var = i_var - 1;
                 elseif isOp
                      nOperands = 0;
                      %check if OK to have no operands based on opCode
@@ -511,7 +569,16 @@ for i = 1:nLines
             % 0x80	Array	(4+6)
             % 0xC0	CANopen address with multiple subindices (4+8)
 
-            varnames = arrayfun(@(x) x.name, var, 'UniformOutput', false);
+            if i_var>0
+                varnames = arrayfun(@(x) x.name, var, 'UniformOutput', false);
+            else
+                varnames = [];
+            end
+            if i_def > 0
+                defnames = arrayfun(@(x) x.name, def, 'UniformOutput', false);
+            else
+                defnames = [];
+            end
 
             for j=1:nOperands+nResult 
                 iDefinedVar = [];
@@ -537,249 +604,327 @@ for i = 1:nLines
                     	break;
                     end
                 end
-                operand = str2double(operandStr);
-                %Literals
-                if ~isnan(operand) %numeric decimal literal (scalar)
-                    scope = 0;
-                    if operand<0
-                        type = 4;
-                        operand = typecast(int32(operand), 'uint8');
-                    else
-                        type = 7;
-                        operand = typecast(uint32(operand), 'uint8');
-                    end
-                elseif length(operandStr)>2 && isequal(operandStr(1:2), '0b') %numeric binary literal (scalar)
-                    try
-                        operand = bin2dec(operandStr(3:end));
+                
+                %First look for literals, then replace any defines.
+                %Then look for literals again
+                %
+                loop = true;
+                checkedDefines = false;
+                while loop
+                    loop = false;
+                    operand = str2double(operandStr);
+                    %Literals
+                    if ~isnan(operand) %numeric decimal literal (scalar)
                         scope = 0;
-                        type = 7;
-                        operand = typecast(uint32(operand), 'uint8');
-                    catch
-                        warnStr=addText(warnStr, 'invalid binary literal: 0b...');  %TODO: change to errStr
-                    end
-                elseif length(operandStr)>2 && isequal(operandStr(1:2), '0x') %numeric hex literal (scalar)
-                    try
-                        operand = hex2dec(operandStr(3:end));
-                        scope = 0;
-                        type = 7;
-                        operand = typecast(uint32(operand), 'uint8');
-                    catch
-                        warnStr=addText(warnStr, 'invalid hex literal: 0x..."');  %TODO: change to errStr
-                    end
-
-                %string literal
-                elseif length(operandStr)>2 && operandStr(1) == '"' && operandStr(end) == '"' 
-                    operand = operandStr(2:end-1);
-                    operand = [uint8(operand) uint8(0)]; %null terminate string
-                    scope = 0;
-                    type = 8;
-
-                %bytearray literal
-                elseif length(operandStr)>2 && operandStr(1) == '!' && operandStr(end) == '!' 
-                    operand = hex2dec(regexp(operandStr(2:end-1), '[A-Fa-f0-9]{2}','match'));
-                    scope = 0;
-                    type = 8;
-
-                %array literal
-                elseif length(operandStr)>2 && operandStr(1) == '[' && operandStr(end) == ']' 
-                    operand = str2double(regexp(operandStr(2:end-1), '\d+','match'));
-                    scope = 0;
-                    if all(operand>0)
-                        type = 7;
-                        operand = typecast(uint32(operand), 'uint8');
-                    else
-                        type = 4; 
-                        operand = typecast(int32(operand), 'uint8');
-                    end
-                    typemod = 0;
-                    typemodEL = 128; %0x80 array modifier
-
-                %network 
-                elseif length(operandStr)>=9 && isequal(regexp(operandStr, 'N\d{1,2}\:[A-Fa-f0-9]{4}.[^\.\:]'),1) 
-                    %N followed by 1 or 2 digits followed by : followed by 4 hex deigts followed by . without any further . or :
-                    operand = []; 
-                    %type, scope, and typemod refer to how subindex will be reported 
-                    %(scope always 0, type mod always 0x40, and iDefinedVar always empty)
-                    %typeEl, scopeEl, and typemodEl, and iDefinedVarEl refer to the variable subindex
-                    %if the subIndex is literal AND there are not multiple subindices,
-                    %typeEl, scopeEl will be empty and typemodEl = 0;
-                    scope = 0; 
-                    typemod = 64; %0x40
-                    type = 0;
-                    subIndex = []; 
-                    nSubIndices = 0;
-                    odIndex = [];
-                    
-                    nodeStr = regexp(operandStr, 'N\d{1,2}\:', 'match'); 
-                    if ~isempty(nodeStr)
-                        nodeStr = nodeStr{1}(2:end-1); %convert to string  and scrap leading N and trailing :
-                        node = str2double(nodeStr); 
-                        if isnan(node) || node>15
-                            warnStr = addText(warnStr, 'node should be <= 15'); 
+                        if operand<0
+                            type = 4;
+                            operand = typecast(int32(operand), 'uint8');
+                        else
+                            type = 7;
+                            operand = typecast(uint32(operand), 'uint8');
                         end
+                    elseif length(operandStr)>2 && isequal(operandStr(1:2), '0b') %numeric binary literal (scalar)
+                        try
+                            operand = bin2dec(operandStr(3:end));
+                            scope = 0;
+                            type = 7;
+                            operand = typecast(uint32(operand), 'uint8');
+                        catch
+                            warnStr=addText(warnStr, 'invalid binary literal: 0b...');  %TODO: change to errStr
+                        end
+                    elseif length(operandStr)>2 && isequal(operandStr(1:2), '0x') %numeric hex literal (scalar)
+                        try
+                            operand = hex2dec(operandStr(3:end));
+                            scope = 0;
+                            type = 7;
+                            operand = typecast(uint32(operand), 'uint8');
+                        catch
+                            warnStr=addText(warnStr, 'invalid hex literal: 0x..."');  %TODO: change to errStr
+                        end
+
+                    %string literal
+                    elseif length(operandStr)>2 && operandStr(1) == '"' && operandStr(end) == '"' 
+                        operand = operandStr(2:end-1);
+                        operand = [uint8(operand) uint8(0)]; %null terminate string
+                        scope = 0;
+                        type = 8;
+
+                    %bytearray literal
+                    elseif length(operandStr)>2 && operandStr(1) == '!' && operandStr(end) == '!' 
+                        operand = hex2dec(regexp(operandStr(2:end-1), '[A-Fa-f0-9]{2}','match'));
+                        scope = 0;
+                        type = 8;
+
+                    %array literal
+                    elseif length(operandStr)>2 && operandStr(1) == '[' && operandStr(end) == ']' 
+                        operand = str2double(regexp(operandStr(2:end-1), '\d+','match'));
+                        scope = 0;
+                        if all(operand>0)
+                            type = 7;
+                            operand = typecast(uint32(operand), 'uint8');
+                        else
+                            type = 4; 
+                            operand = typecast(int32(operand), 'uint8');
+                        end
+                        typemod = 0;
+                        typemodEL = 128; %0x80 array modifier
+
                     else
-                        error('should not get here, because expression already matched')
-                    end
-                    
-                    indexStr = regexp(operandStr, '\:[A-Fa-f0-9]{4}\.', 'match');  
-                    if ~isempty(indexStr)
-                        indexStr = indexStr{1}(2:end-1); %convert to string  and scrap leading : and trailing .
-                        odIndex = hex2dec(indexStr); 
-                    else
-                        error('should not get here, because expression already matched')
-                    end
-                    
-                    subIndexStr = regexp(operandStr, '\.\w+', 'match'); %find . followed by digits
-                   
-                    if ~isempty(subIndexStr)
-                        subIndexStr = subIndexStr{1}(2:end); %convert to string and scrap '.'
-                        subIndex = str2double(subIndexStr);
                         
-                        %literal subIndex
-                        if ~isnan(subIndex)
-                            if subIndex > 255
-                                warnStr = addText(warnStr, 'invalid subindex (must be <=255)'); %TODO: change to errStr
+                        %if we haven't yet replaced defines, do that
+                        if ~checkedDefines
+                            if isempty(defnames)
+                                checkedDefines = true;
+                            else
+                                %break up the operand string at delimiters used in network and array operands
+                                [operandSplitStr, delimiterMatch] = strsplit(operandStr, {':','|','.','^','[',']','<','>'});
+
+                                %find if any of the strings are present in list of defines
+                                [isDefine, iDefine ]= ismember(operandSplitStr, defnames);
+
+                                %replace those strings with their definition
+                                for d=find(isDefine)
+                                    operandSplitStr{d} = def(iDefine(d)).replace;
+                                    fprintf('replaced "%s" with "%s"\n', def(iDefine(d)).name, def(iDefine(d)).replace);
+                                end
+
+                                %put the operand string back together
+                                operandStr = strjoin(operandSplitStr, delimiterMatch);
+
+
+                                if any(isDefine)
+                                    loop = true;
+                                    continue; %go back to beinning of while loop
+                                else
+                                    checkedDefines = true;
+                                end
+                            end
+                        end
+                        
+                        %continue looking for network, variable, and arrays
+                        
+                        %network
+                        if length(operandStr)>=9 && isequal(regexp(operandStr, 'N\d{1,2}(<.*?>)?:[A-Fa-f0-9]{4}\.[^\.\:]*'),1) 
+                            %N followed by 1 or 2 digits followed by : followed by 4 hex deigts followed by . without any further . or :
+                            operand = []; 
+                            %type, scope, and typemod refer to how subindex will be reported 
+                            %(scope always 0, type mod always 0x40, and iDefinedVar always empty)
+                            %typeEl, scopeEl, and typemodEl, and iDefinedVarEl refer to the variable subindex
+                            %if the subIndex is literal AND there are not multiple subindices,
+                            %typeEl, scopeEl will be empty and typemodEl = 0;
+                            scope = 0; 
+                            typemod = 64; %0x40
+                            type = 0;
+                            subIndex = []; 
+                            nSubIndices = 0;
+                            odIndex = [];
+
+                            %Get NODE
+                            nodeStr = regexp(operandStr, 'N\d{1,2}', 'match'); 
+                            if ~isempty(nodeStr)
+                                nodeStr = nodeStr{1}(2:end); %convert to string  and scrap leading N 
+                                node = str2double(nodeStr); 
+                                if isnan(node) || node>15
+                                    warnStr = addText(warnStr, 'node should be 15 or lower'); 
+                                end
+                            else
+                                error('should not get here, because expression already matched')
+                            end
+
+                            %Get OD INDEX  - literal (hex) only - required
+                            indexStr = regexp(operandStr, '\:[A-Fa-f0-9]{4}\.', 'match');  
+                            if ~isempty(indexStr)
+                                indexStr = indexStr{1}(2:end-1); %convert to string  and scrap leading : and trailing .
+                                odIndex = hex2dec(indexStr); 
+                            else
+                                error('should not get here, because expression already matched')
+                            end
+
+                            %Get OD SUBINDEX  - literal (decimal) or variable -required
+                            subIndexStr = regexp(operandStr, '\.\w+', 'match'); %find . followed by digits
+
+                            if ~isempty(subIndexStr)
+                                subIndexStr = subIndexStr{1}(2:end); %convert to string and scrap '.'
+                                subIndex = str2double(subIndexStr);
+
+                                %literal subIndex
+                                if ~isnan(subIndex)
+                                    if subIndex > 255
+                                        warnStr = addText(warnStr, 'invalid subindex (must be <=255)'); %TODO: change to errStr
+                                    end
+
+                                %non literal subIndex    
+                                else
+                                    subIndex = [];
+                                    [isDefinedVarEl, iDefinedVarEl] = ismember(subIndexStr, varnames);
+                                    if isDefinedVarEl
+                                        if isNumericType(var(iDefinedVarEl).type) && var(iDefinedVarEl).array == 0
+                                            scopeEl = scopeStr2Code(var(iDefinedVarEl).scope);
+                                            typeEl = typeStr2Code(var(iDefinedVarEl).type);
+                                            typemodEl = 192; %0xC0
+                                        else
+                                            warnStr = addText(warnStr, 'variable subindex must be a numeric scalar type'); %TODO: change to errStr
+                                        end
+                                    else
+                                        warnStr = addText(warnStr, 'variable subindex undefined'); %TODO: change to errStr
+                                    end
+                                end
+                            else
+                               warnStr = addText(warnStr, 'no subindex found'); %TODO: change to errStr
+                            end
+
+                            %Get NUMBER OF SUBINDICES - optional, default 1
+                            nSubIndicesStr = regexp(operandStr, '\^\w+', 'match'); %find ^ followed by word
+                            if ~isempty(nSubIndicesStr)
+                                nSubIndicesStr = nSubIndicesStr{1}(2:end); %convert to string and scrap '^'
+                                nSubIndices = str2double(nSubIndicesStr); 
+                                if isnan(nSubIndices) || nSubIndices > 50 && nSubIndices > 0
+                                     warnStr = addText(warnStr,['invalid number of subindices ^' nSubIndicesStr] ); %TODO: change to errStr
+                                elseif nSubIndices > 1
+                                    typemodEl = 192; %0xC0
+                                    typeEl = 5;
+                                    scopeEl = 0; %literal
+                                end
                             end
                             
-                        %non literal subIndex    
-                        else
-                            subIndex = [];
-                            [isDefinedVarEl, iDefinedVarEl] = ismember(subIndexStr, varnames);
-                            if isDefinedVarEl
-                                if isNumericType(var(iDefinedVarEl).type) && var(iDefinedVarEl).array == 0
-                                    scopeEl = scopeStr2Code(var(iDefinedVarEl).scope);
-                                    typeEl = typeStr2Code(var(iDefinedVarEl).type);
-                                    typemodEl = 192; %0xC0
+                            %Get TYPE OF SUBINDEX - optional, default uint8
+                            typeStr = regexp(operandStr, '\|\w+', 'match'); %find | followed by word (type)
+                            if isempty(typeStr)
+                                type = typeStr2Code('uint8');  
+                                warnStr = addText(warnStr, 'assuming uint8 type for network operand');
+                            else
+                                typeStr = typeStr{1}(2:end); %convert to string and scrap '|'
+                                type = typeStr2Code(typeStr); 
+                                if isempty(type)
+                                    warnStr = addText(warnStr, 'invalid type for network operand'); %TODO change to errStr
+                                    type = typeStr2Code('uint8');
+                                end
+                            end
+                            
+                            %Get PORT/NETID - optional, 
+                            %default use r,R,or 2 : port = 2, netID = 1
+                            %for PM logging use l,L,or 4 port = 4, netID = 1
+                            %S, C, and T ports are only relevant for ControlTower
+                            port = 2;
+                            netID = 1;
+                            
+                            if regexp(operandStr, '<.*?>')  %use "lazy" (?) modifier to find closest >
+                                portnetStr = regexp(operandStr, '<[1Rr4Ll],\d>', 'match'); %find < followed by 0-9 followed by , followed by digit followed by > with optional whitespace 
+                                if ~isempty(portnetStr)
+                                    portnetStr = portnetStr{1}(2:end-1); %convert to string and scrap  '<' and '>'
+                                    portnetStr = strsplit(portnetStr, ','); %convert back to cell array split by comma
+                                    portStr = strtrim(portnetStr{1});
+                                    switch portStr
+                                        case {'r','R','2'}
+                                            port = 1;
+                                        case {'l','L','4'}
+                                            port = 4;       
+                                    end
+                                    netID = str2double(portnetStr{2});
                                 else
-                                    warnStr = addText(warnStr, 'variable subindex must be a numeric scalar type'); %TODO: change to errStr
+                                   warnStr = addText(warnStr, 'invalid port/netID specifier, ignoring'); 
                                 end
                             else
-                                warnStr = addText(warnStr, 'variable subindex undefined'); %TODO: change to errStr
+                                disp('using default port/netID')
                             end
-                        end
-                    else
-                       warnStr = addText(warnStr, 'no subindex found'); %TODO: change to errStr
-                    end
-                    
-                    nSubIndicesStr = regexp(operandStr, '\^\w+', 'match'); %find ^ followed by word
-                    if ~isempty(nSubIndicesStr)
-                        nSubIndicesStr = nSubIndicesStr{1}(2:end); %convert to string and scrap '^'
-                        nSubIndices = str2double(nSubIndicesStr); 
-                        if isnan(nSubIndices) || nSubIndices > 50 && nSubIndices > 0
-                             warnStr = addText(warnStr,['invalid number of subindices ^' nSubIndicesStr] ); %TODO: change to errStr
-                        elseif nSubIndices > 1
-                            typemodEl = 192; %0xC0
-                            typeEl = 5;
-                            scopeEl = 0; %literal
-                        end
-                    end
-                    typeStr = regexp(operandStr, '\|\w+', 'match'); %find | followed by word (type)
-                    if isempty(typeStr)
-                        type = typeStr2Code('uint8');  
-                        warnStr = addText(warnStr, 'assuming uint8 type for network operand');
-                    else
-                        typeStr = typeStr{1}(2:end); %convert to string and scrap '|'
-                        type = typeStr2Code(typeStr); 
-                        if isempty(type)
-                            warnStr = addText(warnStr, 'invalid type for network operand'); %TODO change to errStr
-                            type = typeStr2Code('uint8');
-                        end
-                    end
-                    
-                    network = struct('node', node, 'odIndex', odIndex, 'subIndex', subIndex, 'nSubIndices', nSubIndices);
+                            fprintf('\nfound Network, node %2.0f, port %2.0f, netID %2.0f, odIndex %4X.%2.0f (%2.0f)', node, port, netID, odIndex, subIndex, nSubIndices);
+                            network = struct('node', node, 'port', port, 'netID', netID, 'odIndex', odIndex, 'subIndex', subIndex, 'nSubIndices', nSubIndices);
 
-                %non-literal
-                else
-                    %if it is an array we need to strip the
-                    %array indexer [...]
-                    operand = [];
-                    [iEl, elStr] = regexp(operandStr, '\[.*\]','start','match');
+                        %non-literal (array and scalar)
+                        else
+                            %if it is an array we need to strip the
+                            %array indexer [...]
+                            operand = [];
+                            [iEl, elStr] = regexp(operandStr, '\[.*?\]','start','match'); %use "lazy" (?) modifier to find closest ]
 
-                    if ~isempty(iEl)
-                        operandStr = operandStr(1:iEl-1);
-                    end
-                    
-                    [isDefinedVar, iDefinedVar] = ismember(operandStr, varnames);
+                            if ~isempty(iEl)
+                                operandStr = operandStr(1:iEl-1);
+                            end
 
-                    % defined variable 
-                    if isDefinedVar 
-                        type = typeStr2Code(var(iDefinedVar).type);
-                        scope = scopeStr2Code(var(iDefinedVar).scope);
-                        maxEl = var(iDefinedVar).array;
+                            [isDefinedVar, iDefinedVar] = ismember(operandStr, varnames);
 
-                        if maxEl > 0 %array
-                            typemod = 0; 
-                            typemodEl = 128; % 0x80
-                            scopeEl = 0;
-                            typeEl = 6;
-                            el = 65534; %0xFFFE: code for entire array
-                        else %scalar
-                            typemod = 0;
-                            typemodEl = [];
-                            scopeEl = [];
-                            typeEl = [];
-                            el = [];
-                        end
+                            % defined variable 
+                            if isDefinedVar 
+                                type = typeStr2Code(var(iDefinedVar).type);
+                                scope = scopeStr2Code(var(iDefinedVar).scope);
+                                maxEl = var(iDefinedVar).array;
 
-                        if ~isempty(elStr)
-                            elStr = elStr{1}(2:end-1); %convert cell to string and strip [ ] 
-                            if var(iDefinedVar).array == 0 
-                                warnStr=addText(warnStr, 'attempting to index non-array variable');  %TODO: change to errStr
-                            else
-                                el = str2double(elStr);
-                                if ~isnan(el)
-                                    if el > maxEl-1
-                                        warnStr=addText(warnStr, 'exceeds array bounds');  %TODO: cha %TODO: change to errStr
+                                if maxEl > 0 %array
+                                    typemod = 0; 
+                                    typemodEl = 128; % 0x80
+                                    scopeEl = 0;
+                                    typeEl = 6;
+                                    el = 65534; %0xFFFE: code for entire array
+                                else %scalar
+                                    typemod = 0;
+                                    typemodEl = [];
+                                    scopeEl = [];
+                                    typeEl = [];
+                                    el = [];
+                                end
+
+                                if ~isempty(elStr)
+                                    elStr = elStr{1}(2:end-1); %convert cell to string and strip [ ] 
+                                    if var(iDefinedVar).array == 0 
+                                        warnStr=addText(warnStr, 'attempting to index non-array variable');  %TODO: change to errStr
                                     else
-                                         %scalar literal array element
-                                        typeEl = 6;
-                                        scopeEl = 0;
-
-                                    end
-                                else
-                                    elStr = strtrim(elStr);
-                                    if isempty(elStr)
-                                        el = 65534; %0xFFFE: code for entire array
-                                    else
-                                        el = [];
-                                        [isDefinedVarEl, iDefinedVarEl] = ismember(elStr, varnames);
-                                        if isDefinedVarEl
-                                            if var(iDefinedVarEl).array >0
-                                                warnStr=addText(warnStr, 'array variable used as array index');  %TODO: cha %TODO: change to errStr
+                                        el = str2double(elStr);
+                                        if ~isnan(el)
+                                            if el > maxEl-1
+                                                warnStr=addText(warnStr, 'exceeds array bounds');  %TODO: cha %TODO: change to errStr
                                             else
-                                                %verify that variable is valid as an index (scalar
-                                                %numeric)
-                                                typeElStr = var(iDefinedVarEl).type;
-                                                if isNumericType(typeElStr)
-                                                    typeEl = typeStr2Code(typeElStr);
-                                                    scopeEl = scopeStr2Code(var(iDefinedVarEl).scope);
-                                                    disp(['found usage of:' varnames(iDefinedVarEl) ' as array element']);
+                                                 %scalar literal array element
+                                                typeEl = 6;
+                                                scopeEl = 0;
+
+                                            end
+                                        else
+                                            elStr = strtrim(elStr);
+                                            if isempty(elStr)
+                                                el = 65534; %0xFFFE: code for entire array
+                                            else
+                                                el = [];
+                                                [isDefinedVarEl, iDefinedVarEl] = ismember(elStr, varnames);
+                                                if isDefinedVarEl
+                                                    if var(iDefinedVarEl).array >0
+                                                        warnStr=addText(warnStr, 'array variable used as array index');  %TODO: cha %TODO: change to errStr
+                                                    else
+                                                        %verify that variable is valid as an index (scalar
+                                                        %numeric)
+                                                        typeElStr = var(iDefinedVarEl).type;
+                                                        if isNumericType(typeElStr)
+                                                            typeEl = typeStr2Code(typeElStr);
+                                                            scopeEl = scopeStr2Code(var(iDefinedVarEl).scope);
+                                                            disp(['found usage of:' varnames(iDefinedVarEl) ' as array element']);
+                                                        else
+                                                            warnStr=addText(warnStr, 'non-numeric variable used as array index');  %TODO: cha %TODO: change to errStr
+                                                        end
+                                                    end
+
                                                 else
-                                                    warnStr=addText(warnStr, 'non-numeric variable used as array index');  %TODO: cha %TODO: change to errStr
+                                                     warnStr=addText(warnStr, 'undefined variable used as array index');  %TODO: cha %TODO: change to errStr
                                                 end
                                             end
-
-                                        else
-                                             warnStr=addText(warnStr, 'undefined variable used as array index');  %TODO: cha %TODO: change to errStr
                                         end
                                     end
+
+                                end
+                                disp(['found usage of:' varnames{iDefinedVar}]);
+                                el = typecast(uint16(el), 'uint8');
+                            %undefined variable
+                            else
+                                if j<=nOperands
+                                    warnStr=addText(warnStr, ['undefined variable in operand' num2str(j)]);  %TODO: cha %TODO: change to errStr
+                                else
+                                    warnStr=addText(warnStr, 'undefined variable in result');  %TODO: cha %TODO: change to errStr
                                 end
                             end
-
-                        end
-                        disp(['found usage of:' varnames{iDefinedVar}]);
-                        el = typecast(uint16(el), 'uint8');
-                    %undefined variable
-                    else
-                        if j<=nOperands
-                            warnStr=addText(warnStr, ['undefined variable in operand' num2str(j)]);  %TODO: cha %TODO: change to errStr
-                        else
-                            warnStr=addText(warnStr, 'undefined variable in result');  %TODO: cha %TODO: change to errStr
-                        end
-                    end
-
-                end 
-
+                            
+                            
+                        end %end non-literals (else case)
+                    end 
+                end %end while
+                
 
                 if j<=nOperands
                     operation(i_op).operand(j).typeScope = typemod+scope+type;
@@ -848,13 +993,24 @@ for i = 1:nLines
                 varBytes = typecast(cast(var(k).init, var(k).type), 'uint8');
                 
             elseif isequal(var(k).type, 'string')
-                if length(var(k).initStr)<=2
-                    warnStr=addText(warnStr, 'zero length string'); 
-                    var(k).init = [];
+                if var(k).initStr(1)=='#'
+                    strLen = str2double(var(k).initStr(2:end));
+                    if isnan(strLen) || strLen < 1 || strLen > 50
+                        warnStr=addText(warnStr, 'string length initializer should be 1-50'); 
+                        var(k).init = [];
+                    else
+                        var(k).init = zeros(1, strLen); %all null
+                    end
                 else
-                    var(k).init = var(k).initStr(2:end-1);
+                    if length(var(k).initStr)<=2
+                        warnStr=addText(warnStr, 'zero length string'); 
+                        var(k).init = [];
+                    else
+                        var(k).init = var(k).initStr(2:end-1);
+                    end
                 end
                 varBytes = [uint8(var(k).init), uint8(0)]; %null terminate string
+                
                 
            elseif isequal(var(k).type, 'bytearray')
                 if length(var(k).initStr)<=2
@@ -885,6 +1041,8 @@ for i = 1:nLines
         
         
         % ------------- end generate download bytes ------------%
+        
+        
         if ~isempty(ei_label)
             formattedtext=[formattedtext '<FONT COLOR="800040"><i>' A{i}(si_label:ei_label) '</i>'];
         end
@@ -907,7 +1065,8 @@ for i = 1:nLines
         end
 
         if ~isempty(ei_operand)
-            formattedtext=[formattedtext '<FONT COLOR="black">'  A{i}(si_operand:ei_operand)];
+            str = formatHTML(A{i}(si_operand:ei_operand));
+            formattedtext=[formattedtext '<FONT COLOR="black">'  str];
         end
         
         if ~isempty(ei_unused)
@@ -915,7 +1074,8 @@ for i = 1:nLines
         end
         
         if ~isempty(ei_varinit)
-            formattedtext=[formattedtext '<FONT COLOR=#FF8000><b>' A{i}(si_varinit:ei_varinit) '</b>'];
+            str = formatHTML(A{i}(si_varinit:ei_varinit));
+            formattedtext=[formattedtext '<FONT COLOR=#FF8000><b>' str '</b>'];
         end
         
         if ~isempty(ei_resultsymbol)
@@ -952,12 +1112,13 @@ hnd = uicontrol('Position', [10 10 900 780],'Style','listbox','String',B, 'FontN
 
 %%
 %
-tbldata = cell(i_op,7);
-for i=1:i_op
-    tbldata{i,1} = sprintf(' %02X (%s)', operation(i).opCodeByte, operation(i).opCodeName);
-end
-
-uitable('Position', [910 10 580 780],'Data', tbldata,'ColumnName',{'OpCode','Op1','Op1','Op3', 'Op4','Op5','Result'})
+nOps = i_op;
+% tbldata = cell(nOps,7);
+% for i=1:nOps
+%     tbldata{i,1} = sprintf(' %02X (%s)', operation(i).opCodeByte, operation(i).opCodeName);
+% end
+% 
+% uitable('Position', [910 10 580 780],'Data', tbldata,'ColumnName',{'OpCode','Op1','Op1','Op3', 'Op4','Op5','Result'})
 
 %if start and end lines were not included, add them
 nLabels = size(label,2);
@@ -972,7 +1133,6 @@ end
         
     % ------------ start generate download bytes ----------- %
 i_jump = 0;
-nOps = length(operation);
 jump = zeros(nOps,1);
 opBytes = cell(nOps,1);
 for k=1:nOps
@@ -1115,8 +1275,8 @@ function [opBytes, jumpLine] = assembleOperation(op, var, label, copyResult)
                 error('network field should not be empty')
             end
             
-            port = 2;
-            netId = 1;
+            port = operand.network.port;
+            netId = operand.network.netID;
             odIndexBytes = typecast(uint16(operand.network.odIndex), 'uint8');
             nSubIndices = uint8(operand.network.nSubIndices);
             node = uint8(operand.network.node);
@@ -1161,6 +1321,10 @@ function [opBytes, jumpLine] = assembleOperation(op, var, label, copyResult)
             else
                 if isempty(operand.iVar)
                     error('variable not defined')
+                elseif length(operand.iVar)~=1 || operand.iVar<1 || operand.iVar>length(var)
+                    operand.iVar
+                    error('variable invalid')
+                    
                 else
                     pointer = var(operand.iVar).pointer;
                     pointer = typecast(uint16(pointer), 'uint8');
@@ -1216,4 +1380,9 @@ function [opBytes, jumpLine] = assembleOperation(op, var, label, copyResult)
     end
 end
 
-
+function htmlStr = formatHTML(str, varargin)
+    
+    htmlStr = strrep(str, '<', '&#60');
+    htmlStr = strrep(htmlStr, '>', '&#62');
+    
+end
