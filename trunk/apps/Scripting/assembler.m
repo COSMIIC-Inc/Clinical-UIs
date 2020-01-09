@@ -1,6 +1,6 @@
 close all
 
-fid = fopen('logdata_2.nnps', 'r');
+fid = fopen('demo.nnps', 'r');
 
 
 %%
@@ -11,6 +11,9 @@ fid = fopen('logdata_2.nnps', 'r');
 % 3. look for variable initializer (=) - moves endparse  TODO: exception inside string
 % 4. look for label ({ }) - moves startparse  TODO: exception inside string
 % 5. look for opcode or variable definition (keywords) and subsequent operands or variable definition
+%
+% Note for steps 1-4 we check for "..." OR the special characters (%, =, =>, {}).  This way we can make exceptions
+% for usage of the special charchters inside strings.
 %
 % variable naming notes
 % si_... starting index
@@ -182,9 +185,12 @@ for i = 1:nLines
     nResult = 0;
     warnStr = [];
     
-    formattedtext = ['<HTML><pre><FONT COLOR="black">' sprintf('%03u  ', i)]; %use <pre> tag to prevent dleteing whitespace in HTML
+    formattedtext = ['<HTML><pre><FONT COLOR="black">' sprintf('%03u  ', i)]; %use <pre> tag to prevent deleting whitespace in HTML
     
-    [si_comment, ei_comment] = regexp(A{i}, '\s*%.*'); %comment: optional whitespace, '%', anything
+    [si, ei] = regexp(A{i}, '\".*?\"|\s*%.*'); %comment: optional whitespace, '%', anything
+    keep = (A{i}(si)~='"');
+    si_comment = si(keep);
+    ei_comment = ei(keep);
     if ~isempty(ei_comment) && si_comment == 1 %comment begins at beginning, don't do further parsing
         formattedtext=[formattedtext '<FONT COLOR="green"><i>' A{i} '</i></HTML>'];
     else
@@ -201,7 +207,10 @@ for i = 1:nLines
         startparse = 1;
         
         %find result, if any
-        [si_result, ei_result] = regexp(A{i}(startparse:endparse), '=>.+'); %result: '=>' followed by anything. Don't include optional whitespace before '>' (will go to preceding opcode/operand)
+        [si, ei] = regexp(A{i}(startparse:endparse), '\".*?\"|=>.+'); %result: '=>' followed by anything. Don't include optional whitespace before '>' (will go to preceding opcode/operand)
+        keep = (A{i}(startparse+si-1)~='"');
+        si_result = si(keep);
+        ei_result = ei(keep);
         if ~isempty(si_result)
             A{i}=[A{i}(1:si_result-1) ' ' A{i}(si_result:end )]; %add a space prior to resultsymbol '=>' - required to detect final operand
             endparse = si_result - 1+1; %include added space
@@ -216,7 +225,10 @@ for i = 1:nLines
         
         
         %find a variable initializer, if any
-        [si_varinit, ei_varinit] = regexp(A{i}(startparse:endparse), '=[^>].*'); % '=' followed by anything except >
+        [si, ei] = regexp(A{i}(startparse:endparse), '\".*?\"|=[^>].*'); % '=' followed by anything except >
+        keep = (A{i}(startparse+si-1)~='"');
+        si_varinit = si(keep);
+        ei_varinit = ei(keep);
         if ~isempty(ei_varinit)
             A{i}=[A{i}(1:si_varinit-1) ' ' A{i}(si_varinit:end )]; %add a space prior to initializer '='  - required to detect final operand
             endparse = si_varinit - 1 + 1; %include added space
@@ -227,7 +239,10 @@ for i = 1:nLines
         
         
         %find a label, if any
-        [si_label, ei_label] = regexp(A{i}(startparse:endparse), '\s*{\s*\w+\s*}\s*'); %optional whitespace followed by '{', optional whitespace, at least one charachter, optional whitespace, '}'
+        [si, ei] = regexp(A{i}(startparse:endparse), '\".*?\"|\s*{\s*\w+\s*}\s*'); %optional whitespace followed by '{', optional whitespace, at least one charachter, optional whitespace, '}'
+        keep = (A{i}(startparse+si-1)~='"');
+        si_label = si(keep);
+        ei_label = ei(keep);
         if ~isempty(ei_label)
             startparse = ei_label+1;
             newLabel = strtrim(A{i}(si_label:ei_label)); %trim whitespace outside {}
