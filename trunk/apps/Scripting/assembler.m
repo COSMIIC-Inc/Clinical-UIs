@@ -135,7 +135,7 @@ opcodelist = { ...
     'VECDIV',124,2,2, 'VectorA (elementwise/) VectorB (or scalar)->Vector',1,0,0;
     'EXIT',255,0,0, 'Terminate Script',0,0,0};
 
-%% For Noptepad++ keywords
+%% For generating Noptepad++ UDL keywords
 opcodelistStr = [];
 for i=1:length(opcodelist)
     opcodelistStr = [opcodelistStr ' ' opcodelist{i,1}];
@@ -174,7 +174,7 @@ i_def = length(def);
 label = {};
 i_label = 0;
 
-
+varUsage = [];
 
 for i = 1:nLines
     fprintf('\nLine %3.0f: ', i)
@@ -896,6 +896,7 @@ for i = 1:nLines
                                                             typeEl = typeStr2Code(typeElStr);
                                                             scopeEl = scopeStr2Code(var(iDefinedVarEl).scope);
                                                             disp(['found usage of:' varnames(iDefinedVarEl) ' as array element']);
+                                                            varUsage = [varUsage; iDefinedVarEl];
                                                         else
                                                             warnStr=addText(warnStr, 'non-numeric variable used as array index');  %TODO: cha %TODO: change to errStr
                                                         end
@@ -910,6 +911,7 @@ for i = 1:nLines
 
                                 end
                                 disp(['found usage of:' varnames{iDefinedVar}]);
+                                varUsage = [varUsage; iDefinedVar];
                                 el = typecast(uint16(el), 'uint8');
                             %undefined variable
                             else
@@ -950,97 +952,10 @@ for i = 1:nLines
             
         end  %end ~isempty(ei_op)
         
-        % ------------  start generate variable tables  -------------%
-        stacktable = [];
-        consttable = [];
-        globaltable = [];
-
-        for k = 1:length(var)
-            if isNumericType(var(k).type)
-                
-                %array
-                if var(k).array > 0 
-                    var(k).init = zeros(1,var(k).array);
-                    if ~isempty(var(k).initStr)
-                        if length(var(k).initStr)<=2
-                            warnStr=addText(warnStr, 'invalid array initializer, setting to zero'); 
-                        else
-                            init = str2double(regexp(var(k).initStr(2:end-1), '\d+','match'));
-                            if length(init)>var(k).array
-                                var(k).init = init(1:var(k).array);
-                                warnStr=addText(warnStr, 'ignoring extra array initializer elements'); 
-                            else
-                                var(k).init(1:length(init)) = init;
-                                if length(init)<var(k).array
-                                    warnStr=addText(warnStr, 'setting some uninitialized elemnts to zero'); 
-                                end
-                            end
-                        end  
-                    end
-                    
-                %non-array (uninitialized)   
-                elseif isempty(var(k).initStr)
-                   var(k).init = 0;
-                   
-                %non-array (initialized)     
-                else
-                    var(k).init = str2double(var(k).initStr);
-                    if isnan(var(k).init)
-                        warnStr=addText(warnStr, 'invalid variable initializer, initializing to zero'); 
-                        var(k).init = 0;
-                    end
-                end
-                varBytes = typecast(cast(var(k).init, var(k).type), 'uint8');
-                
-            elseif isequal(var(k).type, 'string')
-                if var(k).initStr(1)=='#'
-                    strLen = str2double(var(k).initStr(2:end));
-                    if isnan(strLen) || strLen < 1 || strLen > 50
-                        warnStr=addText(warnStr, 'string length initializer should be 1-50'); 
-                        var(k).init = [];
-                    else
-                        var(k).init = zeros(1, strLen); %all null
-                    end
-                else
-                    if length(var(k).initStr)<=2
-                        warnStr=addText(warnStr, 'zero length string'); 
-                        var(k).init = [];
-                    else
-                        var(k).init = var(k).initStr(2:end-1);
-                    end
-                end
-                varBytes = [uint8(var(k).init), uint8(0)]; %null terminate string
-                
-                
-           elseif isequal(var(k).type, 'bytearray')
-                if length(var(k).initStr)<=2
-                    warnStr=addText(warnStr, 'zero length bytearray'); 
-                    var(k).init = [];
-                else
-                    var(k).init = hex2dec(regexp(var(k).initStr(2:end-1), '[A-Fa-f0-9]{2}','match'));
-                end
-                varBytes = uint8(var(k).init);
-            end
-            
-            switch var(k).scope 
-                case 'stack'
-                    var(k).pointer = length(stacktable);
-                    stacktable = [stacktable varBytes]; 
-                case 'const'
-                    var(k).pointer = length(consttable);
-                    consttable = [consttable varBytes];
-                case 'global'
-                    var(k).pointer = length(globaltable);
-                    globaltable = [globaltable varBytes];                    
-            end
-            
-            
-        end
-        % ------------  end generate variable tables  -------------%
         
         
         
-        % ------------- end generate download bytes ------------%
+       
         
         
         if ~isempty(ei_label)
@@ -1131,7 +1046,101 @@ if ~isempty(operation)
     end
 end
         
-    % ------------ start generate download bytes ----------- %
+% ------------  start generate variable tables  -------------%
+stacktable = [];
+consttable = [];
+globaltable = [];
+
+varOrder = unique(varUsage, 'stable');
+
+
+for j = 1:length(varOrder)
+    k = varOrder(j);
+    if isNumericType(var(k).type)
+
+        %array
+        if var(k).array > 0 
+            var(k).init = zeros(1,var(k).array);
+            if ~isempty(var(k).initStr)
+                if length(var(k).initStr)<=2
+                    warnStr=addText(warnStr, 'invalid array initializer, setting to zero'); 
+                else
+                    init = str2double(regexp(var(k).initStr(2:end-1), '\d+','match'));
+                    if length(init)>var(k).array
+                        var(k).init = init(1:var(k).array);
+                        warnStr=addText(warnStr, 'ignoring extra array initializer elements'); 
+                    else
+                        var(k).init(1:length(init)) = init;
+                        if length(init)<var(k).array
+                            warnStr=addText(warnStr, 'setting some uninitialized elemnts to zero'); 
+                        end
+                    end
+                end  
+            end
+
+        %non-array (uninitialized)   
+        elseif isempty(var(k).initStr)
+           var(k).init = 0;
+
+        %non-array (initialized)     
+        else
+            var(k).init = str2double(var(k).initStr);
+            if isnan(var(k).init)
+                warnStr=addText(warnStr, 'invalid variable initializer, initializing to zero'); 
+                var(k).init = 0;
+            end
+        end
+        varBytes = typecast(cast(var(k).init, var(k).type), 'uint8');
+
+    elseif isequal(var(k).type, 'string')
+        if var(k).initStr(1)=='#'
+            strLen = str2double(var(k).initStr(2:end));
+            if isnan(strLen) || strLen < 1 || strLen > 50
+                warnStr=addText(warnStr, 'string length initializer should be 1-50'); 
+                var(k).init = [];
+            else
+                var(k).init = zeros(1, strLen); %all null
+            end
+        else
+            strLen = length(var(k).initStr)-2;
+            if strLen <= 0
+                warnStr=addText(warnStr, 'zero length string'); 
+                var(k).init = [];
+            else
+                var(k).init = var(k).initStr(2:end-1);
+            end
+        end
+        
+        varBytes = [strLen, uint8(var(k).init)]; %indcate string length
+
+
+   elseif isequal(var(k).type, 'bytearray')
+        if length(var(k).initStr)<=2
+            warnStr=addText(warnStr, 'zero length bytearray'); 
+            var(k).init = [];
+        else
+            var(k).init = hex2dec(regexp(var(k).initStr(2:end-1), '[A-Fa-f0-9]{2}','match'));
+        end
+        varBytes = uint8(var(k).init);
+    end
+
+    switch var(k).scope 
+        case 'stack'
+            var(k).pointer = length(stacktable);
+            stacktable = [stacktable varBytes]; 
+        case 'const'
+            var(k).pointer = length(consttable);
+            consttable = [consttable varBytes];
+        case 'global'
+            var(k).pointer = length(globaltable);
+            globaltable = [globaltable varBytes];                    
+    end
+
+
+end
+% ------------  end generate variable tables  -------------%
+        
+% ------------ start generate download bytes ----------- %
 i_jump = 0;
 jump = zeros(nOps,1);
 opBytes = cell(nOps,1);
@@ -1141,7 +1150,7 @@ for k=1:nOps
     [opBytes{k}, jump(k)] = assembleOperation(operation(k), var, label, copyResult);
 end
 
-opBytes{nOps+1} = [2 255];  %add EXIT as last operation
+opBytes{nOps+1} = uint8([2 255]);  %add EXIT as last operation
 
     
 if sum(jump>0) < nLabels
@@ -1185,13 +1194,65 @@ for k=1:length(jump)
     end
 end
 
+%build script body and output opcode list in same format as CE for comparison
+scriptbody = [];
 
+fprintf('\n\n\n--------------------------------------------------------------\n\n\n');
+fprintf('\nOpcode list...');
 for k = 1: length(opBytes)
     fprintf('\n');
     fprintf('%02X ', opBytes{k});
+    scriptbody = [scriptbody opBytes{k}];
 end
+fprintf('\n\n\n')
+
+H = 10; %header length
+B = length(scriptbody);
+G = length(globaltable);
+S = length(stacktable);
+C = length(consttable);
+E = 1; %end, 1 byte for script ID.  Note in future this could contain rev byte, CRC, or additional bytes
+D = H+B+G+S+C+E;
+
+dBytes = typecast(uint16(D),'uint8');
+gPointerBytes = typecast(uint16(H+B),'uint8');
+sPointerBytes = typecast(uint16(H+B+G),'uint8');
+cPointerBytes = typecast(uint16(H+B+G+S),'uint8');
+ePointerBytes = typecast(uint16(H+B+G+S+C),'uint8');
+%add header and variable tables
+%Header
+% start   |#bytes|description
+%       0 | 2    | script download size (D)
+%       2 | 2    | pointer to Global Var Table
+%       4 | 2    | pointer to Stack Var Table
+%       6 | 2    | pointer to Constant Var Table
+%       8 | 2    | pointer to end of Script (D-1)
+%      10 | B    | Script Body
+%    10+B | G    | global var bytes
+%  10+B+G | S    | stack var bytes
+%10+B+G+S | C    | const var bytes
+%      D-1| 1    | script ID
+
+scriptID = str2double(inputdlg('scriptID'))
+header = [dBytes, gPointerBytes, sPointerBytes, cPointerBytes, ePointerBytes];
+download = [header, scriptbody, globaltable, stacktable, consttable, scriptID];  
+
+%output download bytes list in same format as CE for comparison
+fprintf('\n\n\n--------------------------------------------------------------\n\n\n');
+fprintf('\nDownload image...');
+for i=1:16:length(download)
+    ei = min(i+16-1, length(download));
+    fprintf('\n%04X:   %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X ', i-1, download(i:ei));
+end
+fprintf('\n\n\n')
+ % ------------- end generate download bytes ------------%
 
 
+
+
+
+
+%% --------- HELPER FUNCTIONS ------------------%
 
 function str = addText(str, newStr)
     if isempty(str)
@@ -1368,15 +1429,15 @@ function [opBytes, jumpLine] = assembleOperation(op, var, label, copyResult)
             end
         end
         if copyResult && j>nOperands  %special case: copy result as last operand
-            opBytes = [opBytes operand.bytes operand.bytes];
+            opBytes = uint8([opBytes operand.bytes operand.bytes]);
         else
-            opBytes = [opBytes operand.bytes];
+            opBytes = uint8([opBytes operand.bytes]);
         end
     end %for operand
     if copyResult
-        opBytes = [length(opBytes)+3, op.opCodeByte, nResult*16+nOperands+1, opBytes]; %add length, opcode, and nResult:nOperand+1
+        opBytes = uint8([length(opBytes)+3, op.opCodeByte, nResult*16+nOperands+1, opBytes]); %add length, opcode, and nResult:nOperand+1
     else
-        opBytes = [length(opBytes)+3, op.opCodeByte, nResult*16+nOperands, opBytes]; %add length, opcode, and nResult:nOperand
+        opBytes = uint8([length(opBytes)+3, op.opCodeByte, nResult*16+nOperands, opBytes]); %add length, opcode, and nResult:nOperand
     end
 end
 
