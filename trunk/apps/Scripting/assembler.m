@@ -1,7 +1,12 @@
-close all
 
-fid = fopen('demo.nnps', 'r');
-
+[filename, pathname ] = uigetfile('*.nnps', 'Choose Script File');
+if filename == 0 
+    return
+end
+fid = fopen([pathname filename], 'r');
+if fid == -1
+    error('Could not open nnps script file for reading')
+end
 
 %%
 % load the text file into a cell array with each index representing a line
