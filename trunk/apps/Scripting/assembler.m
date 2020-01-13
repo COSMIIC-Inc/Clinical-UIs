@@ -1,9 +1,21 @@
+function [download, var, def, operation] = assembler(varargin)
 
-[filename, pathname ] = uigetfile('*.nnps', 'Choose Script File');
-if filename == 0 
-    return
+download = [];
+if nargin<2
+    [filename, pathname ] = uigetfile('*.nnpscript', 'Choose Script File');
+    if filename == 0 
+        return
+    else
+        file = [pathname filename];
+    end
+    if nargin<1
+        scriptID = str2double(inputdlg('scriptID'));
+    end
+else
+    scriptID = varargin{1};
+    file = varargin{2};
 end
-fid = fopen([pathname filename], 'r');
+fid = fopen(file, 'r');
 if fid == -1
     error('Could not open nnps script file for reading')
 end
@@ -1253,7 +1265,7 @@ ePointerBytes = typecast(uint16(H+B+G+S+C),'uint8');
 %10+B+G+S | C    | const var bytes
 %      D-1| 1    | script ID
 
-scriptID = str2double(inputdlg('scriptID'))
+%scriptID = str2double(inputdlg('scriptID'))
 header = [dBytes, gPointerBytes, sPointerBytes, cPointerBytes, ePointerBytes];
 download = [header, scriptbody, globaltable, stacktable, consttable, scriptID];  
 
@@ -1268,7 +1280,7 @@ fprintf('\n\n\n')
  % ------------- end generate download bytes ------------%
 
 
-
+end
 
 
 

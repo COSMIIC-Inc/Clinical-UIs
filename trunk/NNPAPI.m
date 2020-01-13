@@ -1083,6 +1083,106 @@ classdef NNPAPI < handle
 
         end
         
+        function [ dataOut ] = readMemory( NNP, node, memSelect, address, len, print)
+        %READMEM Summary of this function goes here
+        %   dataOut = READMEM( NNP, node, memSelect, address, len, print)
+        %   memSelect
+        %   1, 'flash', 'Flash' 
+        %   2, 'remoteflash', 'remote flash', Remote Flash' PM only)
+        %   3, 'remoteram', 'remote ram', Remote RAM' (PM only)
+        %   4,  'eeprom', 'EEPROM'  (RM only)
+        %
+        % print: true: print to command line
+        dataOut = [];
+
+        if nargin < 6
+            print = false;
+            if nargin < 5
+                error('needs at least 5 inputs')
+            end
+        end
+
+        if node == 0 
+            error('Message cannot be broadcast')
+        end
+        switch memSelect
+            case{'flash', 'Flash', 1}
+                memSelect = 1;
+            case{'remoteflash', 'remote flash', 'Remote Flash', 2}
+                if node ~= 7
+                    disp('No Remote Flash on RMs')
+                end
+                memSelect = 2;
+            case{'remoteram', 'remote ram',  'Remote RAM', 3}
+                if node ~= 7
+                    disp('No Remote RAM on RMs')
+                end
+                memSelect = 3;
+            case{'eeprom', 'EEPROM', 4}
+                if node == 7
+                    disp('No EEPROM on PM')
+                end
+                memSelect = 4;
+            otherwise
+                error('Bad memory selection')
+        end
+
+        while len > 0  
+
+            result = NNP.write(node, '2020', 1, address, 'uint32');   %set address
+            if ~isequal(result, 0)
+                disp(['Retrying: error on set address'])
+                continue;
+            end
+            result = NNP.write(node, '2020', 4, memSelect, 'uint8');  %select memory
+            if ~isequal(result, 0)
+                disp(['Retrying: error on select memory'])
+                continue;
+            end
+            result = NNP.write(node, '2020', 5, 1, 'uint8');          %trigger read
+            if ~isequal(result, 0)
+                disp(['Retrying: error on trigger read'])
+                continue;
+            end
+
+            if node ~= 7
+                pause(0.1); %<<TODO why don't i need pause here.  PM is updating only at 100ms
+            end
+
+            result = NNP.read(node, '2020', 7, 'uint8');              %check for errors
+            if ~isequal(result, 0)
+                if isempty(result)
+                    continue;
+                else
+                    disp(['Retrying: error on memory read: ' num2str(result)]);
+                    continue;
+                end
+            else
+                dataRX = NNP.read(node, '2020', 2, 'uint8');
+            end
+            if length(dataRX)<4
+                disp('Retrying: no address back')
+                continue;
+            end
+            addressback = typecast(dataRX(end-3:end), 'uint32');
+            if addressback ~=  address
+                disp('Retrying: address back does not match')
+                continue;
+            end
+            mem = dataRX(1:end-4)';
+            if length(mem) > len
+                mem = mem(1:len); %cut 
+            end
+            if(print) %up to 32 bytes per line
+                fprintf('%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n', mem)
+                %fprintf('%08X : %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n', address, mem)
+            end
+            dataOut = [dataOut; mem];
+            len = len - length(mem);
+            address = address + length(mem);
+        end
+        end
+        
         %% Shortcuts 
         function success = networkOn(NNP)
         % NETWORKON -turn ON network (must be in waiting mode)
