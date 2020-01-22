@@ -1083,104 +1083,171 @@ classdef NNPAPI < handle
 
         end
         
-        function [ dataOut ] = readMemory( NNP, node, memSelect, address, len, print)
+        function [ dataOut ] = readMemory( NNP, node, memSelect, address, len, print, fastMode, disableWOR, printAddress)
         %READMEM Summary of this function goes here
-        %   dataOut = READMEM( NNP, node, memSelect, address, len, print)
-        %   memSelect
-        %   1, 'flash', 'Flash' 
-        %   2, 'remoteflash', 'remote flash', Remote Flash' PM only)
-        %   3, 'remoteram', 'remote ram', Remote RAM' (PM only)
-        %   4,  'eeprom', 'EEPROM'  (RM only)
-        %
+        %   dataOut = READMEM( NNP, node, memSelect, address, len)
+        %     node: 7(PM) or RM node (no broadcast: 0)
+        %     memSelect
+        %      1, 'flash', 'Flash' 
+        %      2, 'remoteflash', 'remote flash', Remote Flash' PM only)
+        %      3, 'remoteram', 'remote ram', Remote RAM' (PM only)
+        %      4,  'eeprom', 'EEPROM'  (RM only)
+        %     address: address in decimal
+        %     len: number of bytes to read
+        % optional additional arguments
+        %   dataOut = READMEM( NNP, node, memSelect, address, len, print, fastMode, disableWOR, printAddress)
+        %     print: print to command line if true
+        %         default is false
+        %     fastMode:  if true, uses NMT_Read_Memory_Now (supported on PM 404 and later and to be supported in RMs in future)
+        %         default is false
+        %     disableWOR: if true, turns off Wake On Radio mode to further speed up radio requests.  
+        %         defaults to true if fastmode is true, and false otherwise
+        %     printAddress: if true, prints address along with data
+        %         default is false
         % print: true: print to command line
-        dataOut = [];
+        % Timing examples for reading 512 bytes from PM Flash using default WOR interval of 20ms:
+        %   fastMode  disableWOR  Result(s)
+        %    false      false      3.6
+        %    false      true       2.4
+        %    true       false      1.2
+        %    false      true       0.5
+        % TODO: limit retries?
+            dataOut = [];
 
-        if nargin < 6
-            print = false;
-            if nargin < 5
-                error('needs at least 5 inputs')
-            end
-        end
-
-        if node == 0 
-            error('Message cannot be broadcast')
-        end
-        switch memSelect
-            case{'flash', 'Flash', 1}
-                memSelect = 1;
-            case{'remoteflash', 'remote flash', 'Remote Flash', 2}
-                if node ~= 7
-                    disp('No Remote Flash on RMs')
+            %handle cases where fewer arguments are passed
+            if nargin < 9
+                printAddress = false;
+                if nargin < 8
+                    disableWOR = false;
+                    if nargin < 7
+                        fastMode = false;
+                        disableWOR = true;
+                        if nargin < 6
+                            print = false;
+                            if nargin < 5
+                                error('needs at least 5 inputs')
+                            end
+                        end
+                    end
                 end
-                memSelect = 2;
-            case{'remoteram', 'remote ram',  'Remote RAM', 3}
-                if node ~= 7
-                    disp('No Remote RAM on RMs')
+            end
+
+            if node == 0 
+                error('Message cannot be broadcast')
+            end
+            switch memSelect
+                case{'flash', 'Flash', 1}
+                    memSelect = 1;
+                case{'remoteflash', 'remote flash', 'Remote Flash', 2}
+                    if node ~= 7
+                        disp('No Remote Flash on RMs')
+                    end
+                    memSelect = 2;
+                case{'remoteram', 'remote ram',  'Remote RAM', 3}
+                    if node ~= 7
+                        disp('No Remote RAM on RMs')
+                    end
+                    memSelect = 3;
+                case{'eeprom', 'EEPROM', 4}
+                    if node == 7
+                        disp('No EEPROM on PM')
+                    end
+                    memSelect = 4;
+                otherwise
+                    error('Bad memory selection')
+            end
+
+            if disableWOR
+                radioSettings = NNP.getRadioSettings();
+                if radioSettings.worInt > 0
+                    NNP.worOff();
                 end
-                memSelect = 3;
-            case{'eeprom', 'EEPROM', 4}
-                if node == 7
-                    disp('No EEPROM on PM')
-                end
-                memSelect = 4;
-            otherwise
-                error('Bad memory selection')
-        end
-
-        while len > 0  
-
-            result = NNP.write(node, '2020', 1, address, 'uint32');   %set address
-            if ~isequal(result, 0)
-                disp(['Retrying: error on set address'])
-                continue;
-            end
-            result = NNP.write(node, '2020', 4, memSelect, 'uint8');  %select memory
-            if ~isequal(result, 0)
-                disp(['Retrying: error on select memory'])
-                continue;
-            end
-            result = NNP.write(node, '2020', 5, 1, 'uint8');          %trigger read
-            if ~isequal(result, 0)
-                disp(['Retrying: error on trigger read'])
-                continue;
             end
 
-            if node ~= 7
-                pause(0.1); %<<TODO why don't i need pause here.  PM is updating only at 100ms
-            end
-
-            result = NNP.read(node, '2020', 7, 'uint8');              %check for errors
-            if ~isequal(result, 0)
-                if isempty(result)
-                    continue;
-                else
-                    disp(['Retrying: error on memory read: ' num2str(result)]);
-                    continue;
+            if fastMode
+                result = NNP.write(node, '2020', 1, address, 'uint32');   %set address
+                if ~isequal(result, 0)
+                    disp('error on set address-please try again') %have retry here?
+                    len = 0; %ignore rest, but turn WOR back on if disabled
                 end
             else
+                %trigger first read, further reads are triggered by address changing
+                 result = NNP.write(node, '2020', 5, 1, 'uint8');         
+                if ~isequal(result, 0)
+                    disp('error on trigger read-please try again') %have retry here?
+                    len = 0; %ignore rest, but turn WOR back on if disabled
+                end
+            end
+
+            sendNMT = true; %only relevant for fastMode
+            while len > 0  
+                if fastMode
+                    while sendNMT
+                        resp = NNP.nmt(node, 'D0', memSelect); %Force read with auto increment
+                        if isequal(resp, hex2dec('D0'))
+                            break;
+                        elseif  address < NNP.read(node, '2020', 1, 'uint32')   %get address
+                            disp('NMT was not confirmed directly but address has incremented')
+                            break
+                        else
+                            disp('Retrying: send NMT_Read_Memory_Now')
+                        end
+                    end
+                else
+                    result = NNP.write(node, '2020', 1, address, 'uint32');   %set address
+                    if ~isequal(result, 0)
+                        disp('Retrying: error on set address')
+                        continue;
+                    end
+                    result = NNP.write(node, '2020', 4, memSelect, 'uint8');  %select memory
+                    if ~isequal(result, 0)
+                        disp('Retrying: error on select memory')
+                        continue;
+                    end
+
+                    %runcanserver task that reads memory only updates every 100ms
+                    pause(0.1); 
+                end
+
                 dataRX = NNP.read(node, '2020', 2, 'uint8');
+                if length(dataRX)<4
+                    disp('Retrying: no address back') 
+                    sendNMT = false;  
+                    continue;
+                end
+                addressback = typecast(dataRX(end-3:end), 'uint32');
+                if addressback ~=  address
+                    sendNMT = false; 
+                    %check for error only if addressback doesn't match
+                    result = NNP.read(node, '2020', 7, 'uint8');              %check for errors
+                    if ~isempty(result) && ~isequal(result, 0)
+                        disp(['Retrying: error on memory read: ' num2str(result)]);
+                        continue;
+                    else
+                        %No known error or couldn't read error
+                        fprintf('\nRetrying: address back (0x%08x) does not match 0x%08x\n', addressback, address);
+                        continue;
+                    end
+                end
+                mem = dataRX(1:end-4)';
+                if length(mem) > len
+                    mem = mem(1:len); %cut 
+                end
+                if(print) %up to 32 bytes per line
+                    if printAddress
+                        fprintf('%08X : %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n', address, mem)
+                    else
+                        fprintf('%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n', mem)
+                    end
+                end
+                sendNMT = true; %allows address increment
+                dataOut = [dataOut; mem];
+                len = len - length(mem);
+                address = address + length(mem);
             end
-            if length(dataRX)<4
-                disp('Retrying: no address back')
-                continue;
+            if disableWOR && radioSettings.worInt > 0
+                NNP.worOn(radioSettings.worInt);
             end
-            addressback = typecast(dataRX(end-3:end), 'uint32');
-            if addressback ~=  address
-                disp('Retrying: address back does not match')
-                continue;
-            end
-            mem = dataRX(1:end-4)';
-            if length(mem) > len
-                mem = mem(1:len); %cut 
-            end
-            if(print) %up to 32 bytes per line
-                fprintf('%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n', mem)
-                %fprintf('%08X : %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n', address, mem)
-            end
-            dataOut = [dataOut; mem];
-            len = len - length(mem);
-            address = address + length(mem);
-        end
         end
         
         %% Shortcuts 
