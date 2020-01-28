@@ -1,4 +1,5 @@
-
+%demo.m
+% remember to open the NNPAPI before starting the demo
 
 %% Save all RM EEPROM data to a file 
 % Uses RM Bootloader mode
@@ -22,7 +23,10 @@ restorePM(nnp, 'backupPM.mat')
 
 %% Restore all PM Script and Application Settings from file created previously
 % Uses PM Bootloader mode
-restoreScripts(nnp, 'backupScripts.mat')
+restoreScripts(nnp, 'backupScripts2.mat')
+
+%% Update the date to the current date and time
+setPMDateTime(nnp); % 
 
 %% Helper functions to call main functions in other files
 
@@ -54,7 +58,7 @@ end
 function restorePM(nnp, file)
     d = load(file);
     try
-        backupRestorePM(nnp, d.restoreData);
+         backupRestorePM(nnp, d.restoreData);
     catch
         disp('could not open restoreData from file')
     end
