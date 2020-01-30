@@ -1,20 +1,27 @@
-function [download, var, def, operation] = assembler(varargin)
+function [download, var, def, operation] = assembler(scriptID, file, hFig, scriptP, nnp)
 
 download = [];
-if nargin<2
-    [filename, pathname ] = uigetfile('*.nnpscript', 'Choose Script File');
-    if filename == 0 
-        return
-    else
-        file = [pathname filename];
+if nargin<5
+    nnp=[];
+    if nargin<4
+        scriptP = 0;
+        if nargin<3
+            hFig = [];
+            if nargin<2
+                [filename, pathname ] = uigetfile('*.nnpscript', 'Choose Script File');
+                if filename == 0 
+                    return
+                else
+                    file = [pathname filename];
+                end
+                if nargin<1
+                    scriptID = str2double(inputdlg('scriptID'));
+                end
+            end
+        end
     end
-    if nargin<1
-        scriptID = str2double(inputdlg('scriptID'));
-    end
-else
-    scriptID = varargin{1};
-    file = varargin{2};
 end
+
 fid = fopen(file, 'r');
 if fid == -1
     error('Could not open nnps script file for reading')
@@ -172,14 +179,13 @@ while ischar(tline)
     tline = fgetl(fid);
     A{i} = [tline ' '];
 end
-fclose(fid)
+fclose(fid);
 
-figure('Name','fig','Position',[100 100 1200 800]);
 
 nLines = length(A)-1;
 
 B = cell(nLines,1);
-operation = struct('index',[],'line', [],'opCodeName','','opCodeByte','','operand', [], 'result',[]);
+operation = struct('index',[],'line', [],'opCodeName','','opCodeByte','','operand', [], 'result',[], 'address', []);
 i_op = 0;
 var = struct('name','','line', [],'type','','scope','', 'initStr', '', 'init', [], 'array', [], 'pointer',[]);
 i_var = 0;
@@ -774,17 +780,11 @@ for i = 1:nLines
 
                             %Get OD SUBINDEX  - literal (decimal) or variable -required
                             subIndexStr = regexp(operandStr, '\.\w+', 'match'); %find . followed by digits
-
+                            
                             if ~isempty(subIndexStr)
-                                subIndexStr = subIndexStr{1}(2:end); %convert to string and scrap '.'
-                                subIndex = str2double(subIndexStr);
-
-                                %literal subIndex
-                                if ~isnan(subIndex)
-                                    if subIndex > 255
-                                        warnStr = addText(warnStr, 'invalid subindex (must be <=255)'); %TODO: change to errStr
-                                    end
-
+                                subIndexStrHex = regexp(operandStr, '\.[0-9_a-fA-f]{1,2}', 'match'); %find . followed by digits
+                                if ~isempty(subIndexStrHex)
+                                    subIndex = sscanf(subIndexStrHex{1}, '.%2X'); %convert to string and convert from hex
                                 %non literal subIndex    
                                 else
                                     subIndex = [];
@@ -795,14 +795,17 @@ for i = 1:nLines
                                             typeEl = typeStr2Code(var(iDefinedVarEl).type);
                                             typemodEl = 192; %0xC0
                                         else
-                                            warnStr = addText(warnStr, 'variable subindex must be a numeric scalar type'); %TODO: change to errStr
+                                            warnStr = addText(warnStr, 'Variable subindex must be a numeric scalar type'); %TODO: change to errStr
+                                            subIndex = 255; %avoid further errors
                                         end
                                     else
-                                        warnStr = addText(warnStr, 'variable subindex undefined'); %TODO: change to errStr
+                                        warnStr = addText(warnStr, 'Subindex must be hex (0-ff/FF) or numeric scalar variable'); %TODO: change to errStr
+                                        subIndex = 255; %avoid further errors
                                     end
                                 end
                             else
                                warnStr = addText(warnStr, 'no subindex found'); %TODO: change to errStr
+                               subIndex = 255; %avoid further errors
                             end
 
                             %Get NUMBER OF SUBINDICES - optional, default 1
@@ -1052,9 +1055,28 @@ end %end looping through all lines
 %axis off
 
 %%
+debugger = true;
+if isempty(hFig)
+    hFig = figure();
+    hFig.Name = 'Script Assembler - Debugger';
+    hFig.Position =[100 100 1200 800];
+    hFig.NumberTitle = 'off';
+    hFig.MenuBar = 'none';
+    hFig.ToolBar = 'none';
+    
+    if debugger
+        cbDebugEnable = uicontrol(hFig, 'Style', 'checkbox', 'String', 'Enable Debugging', 'Position', [1000 700 120 20]);
+        bSingleStep = uicontrol(hFig, 'Style', 'pushbutton', 'String', 'Single Step', 'Position', [1000 650 120 40]);
+        bRunToLine = uicontrol(hFig, 'Style', 'pushbutton', 'String', 'Run to Line', 'Position', [1000 600 120 40]);
+    end
+
+end
+
 
 %hnd = uitable('Position', [10 10 900 780],'Data',B, 'FontName', 'monospaced', 'FontSize', 12, 'ColumnWidth', {900}, 'ColumnEditable', true)
-hnd = uicontrol('Position', [10 10 900 780],'Style','listbox','String',B, 'FontName', 'monospaced', 'FontSize', 12)
+hnd = uicontrol(hFig, 'Style','listbox','String',B, 'FontName', 'monospaced', 'FontSize', 12, 'Position', [10 10 900 780]);
+
+
 %%
 
 %%
@@ -1176,10 +1198,13 @@ end
 i_jump = 0;
 jump = zeros(nOps,1);
 opBytes = cell(nOps,1);
+address=0;
 for k=1:nOps
     fprintf('\nOperation %2.0f:', k)
     copyResult = opcodelist{operation(k).index, 8};
     [opBytes{k}, jump(k)] = assembleOperation(operation(k), var, label, copyResult);
+    operation(k).address = address;
+    address = address + length(opBytes{k});
 end
 
 opBytes{nOps+1} = uint8([2 255]);  %add EXIT as last operation
@@ -1279,6 +1304,14 @@ end
 fprintf('\n\n\n')
  % ------------- end generate download bytes ------------%
 
+
+if debugger
+    cbDebugEnable.Enable = 'on';
+    bSingleStep.Enable = 'on';
+    cbDebugEnable.Callback = {@debugEnable, hnd, operation, nnp, scriptP};
+    bSingleStep.Callback = {@debugSingleStep, hnd, nnp, var, def, operation, si_operand, ei_operand, opcodelist} ;
+    bRunToLine.Callback = {@debugRunToLine, hnd, var, def, operation, si_operand, ei_operand};
+end
 
 end
 
@@ -1478,4 +1511,182 @@ function htmlStr = formatHTML(str, varargin)
     htmlStr = strrep(str, '<', '&#60');
     htmlStr = strrep(htmlStr, '>', '&#62');
     
+end
+
+
+%1F52.1 Script Control Byte
+% BIT7: Abort
+% BIT6: unused
+% BIT5: unused
+% BIT4: Get Timer
+% BIT3: Clears Timer
+% BIT2: Escape from Debug
+% BIT1: Waiting for single step command to continue
+% BIT0: Debug Enabled
+
+%1F52.2 Script Status Byte
+% 19 abort
+% 20 escape from debug
+% 23 runnext error
+% 24 memory error Stacks
+% 30 > max string
+% divide by zero
+
+
+
+
+function debugEnable(src, event, hLB, operation, nnp, sp)
+    
+    if src.Value
+        disp('TODO: Enable Debugging')
+        if ismember(sp, 1:25) 
+            resp = nnp.nmt(7, 'AB', sp, 0); %TODO: support PDO/Alarm enabled scripts (Param2=1)
+            if ~isequal(resp, hex2dec('AB'))
+                confirmNMT = false;
+            else
+                confirmNMT = true;
+            end
+            resp = nnp.read(7, '1f52', 1, 'uint8', 2);
+            if length(resp)==2
+                control = resp(1);
+                disp(control)
+                status = resp(2);
+                if status > 0
+                    msgbox(['Error: ' num2str(status)])
+                end
+            else
+                if ~confirmNMT
+                    msgbox('Could not confirm NMT')
+                end
+            end
+            if ~isempty(operation)
+                hLB.Value = operation(1).line;
+            end
+        else
+            msgbox('invalid script download location')
+        end
+    else
+        disp('TODO: Disable Debugging')
+        resp = nnp.nmt(7, 'AC'); 
+        if ~isequal(resp, hex2dec('AC'))
+            confirmNMT = false;
+        else
+            confirmNMT = true;
+        end
+        resp = nnp.read(7, '1f52', 1, 'uint8', 2);
+        if length(resp)==2
+            control = resp(1);
+            disp(control)
+            status = resp(2);
+            if status > 0
+                msgbox(['Error: ' num2str(status)])
+            end
+        else
+            if ~confirmNMT
+                msgbox('Could not confirm NMT')
+            end
+        end
+    end
+end
+
+
+function debugSingleStep(src, event, hLB, nnp, var, def, operation, si_operand, ei_operand, opCodeList)
+    persistent op
+    if isempty(op) 
+        op = 1;
+    end
+    
+    %Need to make sure that the NMT command is not retried automatically if it does not get response
+    radioSettings = nnp.getRadioSettings();
+    if radioSettings.retries > 0 
+        nnp.setRadio('Retries', 0)
+    end
+    
+    resp = nnp.nmt(7, 'AD'); 
+    if ~isequal(resp, hex2dec('AC'))
+        confirmNMT = false;
+    else
+        confirmNMT = true;
+    end
+  %%  
+    resp = nnp.read(7, '1f52', 1, 'uint8', 4); %read 8-bit status/control, exec number, opcode
+    if length(resp) == 4
+        control = resp(1);
+        status = resp(2);
+        exec = resp(3);
+        opcodeByte = resp(4);
+        
+        opcodeStr = opCodeList{cell2mat(opCodeList(:,2))==opcodeByte,1};
+        
+        fprintf('\ncontrol: 0x%02X, status: 0x%02X, exec: %d, opcode: %d %s\n', resp, opcodeStr);
+    else
+        %error
+        fprintf('\nerror reading control/status\n')
+    end
+    resp = nnp.read(7, '1f52', 5, 'uint32', 8);  %read 32-bit  types (opAddress, operands, result, timer)
+    if length(resp) == 8
+        baseaddress = hex2dec('30000')+10; %need to make this dependent on SP, 10 is for header
+        address = resp(1);
+        scriptBodyAddress = address - baseaddress; 
+
+         fprintf('\naddress: 0x%08X, opVar0: %d, opVar1: %d, opVar2: %d, opVar3: %d, opVar4: %d, Result: %d, Timer: %d\n', resp);
+    else
+        %error
+        fprintf('\nerror reading Operand Values\n')
+    end
+    resp = nnp.read(7, '1f52', 13, 'uint8'); %read first 32 stack variable bytes
+    if length(resp) == 32
+        fprintf('\n Stack:');
+        fprintf('%02X ', resp);
+        fprintf('\n');
+    else
+        %error
+        fprintf('\nerror reading Stack Bytes\n')
+    end
+    resp = nnp.read(7, '1f52', 14, 'uint8'); %read first 32 stack variable bytes
+    if length(resp) == 32
+        fprintf('\n Globals:');
+        fprintf('%02X ', resp);
+        fprintf('\n');
+    else
+        %error
+        fprintf('\nerror reading Global Bytes\n')
+    end
+    resp = nnp.read(7, '1f52', 15, 'uint8'); %read 10 variable table info table
+    if length(resp) == 10
+        fprintf('\n VarTableInfo:');
+        fprintf('%02X ', resp);
+        fprintf('\n');
+    else
+        %error
+        fprintf('\nerror reading Var Table Info\n')
+    end
+    resp = nnp.read(7, '1f52', 16, 'uint8'); %read jump value
+    if length(resp) == 1
+        fprintf('\nJump 0x%02X\n', resp);
+    else
+        %error
+        fprintf('\nerror reading jump\n')
+    end
+    %%
+    op = op+1;
+    if op<length(operation)
+         hLB.Value = operation(op).line;
+         %disp('TODO: Single Step');
+    end
+    
+      
+    if radioSettings.retries > 0 
+        nnp.setRadio('Retries', radioSettings.retries)
+    end
+    
+%     n = length(hLB.String);
+%     if hLB.Value<n
+%         hLB.Value = hLB.Value+1;
+%         disp('TODO: Single Step')
+%     end
+end
+
+function debugRunToLine(src, event, hLB, nnp, var, def, operation, si_operand, ei_operand)
+    disp('Run to Line')
 end
