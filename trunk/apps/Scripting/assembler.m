@@ -196,6 +196,8 @@ def(2).name = 'timelog'; def(2).replace = 'N7<L,1>:A000.1'; %log with timestamp
 %Can add additional predefined things here
 i_def = length(def);
 
+strPosOperand = nan(nLines, 2);
+strPosResult = nan(nLines, 2);
 
 label = {};
 i_label = 0;
@@ -1014,9 +1016,13 @@ for i = 1:nLines
             formattedtext=[formattedtext '<FONT COLOR="red"><i><u>' A{i}(si_unknown:ei_unknown) '</i></u>'];
         end
 
+
         if ~isempty(ei_operand)
             str = formatHTML(A{i}(si_operand:ei_operand));
-            formattedtext=[formattedtext '<FONT COLOR="black">'  str];
+            formattedtext=[formattedtext '<FONT COLOR="black">'];
+            strPosOperand(i, 1) = length(formattedtext)+1;
+            formattedtext=[formattedtext str];
+            strPosOperand(i, 2) = length(formattedtext);
         end
         
         if ~isempty(ei_unused)
@@ -1033,7 +1039,10 @@ for i = 1:nLines
         end
         
         if ~isempty(ei_result)
-            formattedtext=[formattedtext '<FONT COLOR="black">' A{i}(si_result:ei_result) ];
+            formattedtext=[formattedtext '<FONT COLOR="black">']
+            strPosResult(i, 1) = length(formattedtext)+1;
+            formattedtext=[formattedtext A{i}(si_result:ei_result) ];
+            strPosResult(i, 2) = length(formattedtext);
         end
         
         if ~isempty(ei_comment)
@@ -1059,24 +1068,26 @@ debugger = true;
 if isempty(hFig)
     hFig = figure();
     hFig.Name = 'Script Assembler - Debugger';
-    hFig.Position =[100 100 1200 800];
+    w = 500;
+    h= 800;
+    hFig.Position =[100 100 w h];
     hFig.NumberTitle = 'off';
     hFig.MenuBar = 'none';
     hFig.ToolBar = 'none';
     
     if debugger
-        cbDebugEnable = uicontrol(hFig, 'Style', 'checkbox', 'String', 'Enable Debugging', 'Position', [1000 700 120 20]);
-        bSingleStep = uicontrol(hFig, 'Style', 'pushbutton', 'String', 'Single Step', 'Position', [1000 650 120 40]);
-        bRunToLine = uicontrol(hFig, 'Style', 'pushbutton', 'String', 'Run to Line', 'Position', [1000 600 120 40]);
+        cbDebugEnable = uicontrol(hFig, 'Style', 'checkbox', 'String', 'Enable Debugging', 'Position', [w-130 h-100 120 20]);
+        bSingleStep = uicontrol(hFig, 'Style', 'pushbutton', 'String', 'Single Step', 'Position', [w-130 h-150 120 40]);
+        bRunToLine = uicontrol(hFig, 'Style', 'pushbutton', 'String', 'Run to Line', 'Position', [w-130 h-200 120 40]);
     end
 
 end
 
 
 %hnd = uitable('Position', [10 10 900 780],'Data',B, 'FontName', 'monospaced', 'FontSize', 12, 'ColumnWidth', {900}, 'ColumnEditable', true)
-hnd = uicontrol(hFig, 'Style','listbox','String',B, 'FontName', 'monospaced', 'FontSize', 12, 'Position', [10 10 900 780]);
-
-
+hnd = uicontrol(hFig, 'Style','listbox','String',B, 'FontName', 'monospaced', 'FontSize', 12, 'Position', [10 10 w-150 h-20]);
+hnd.UserData = hnd.String; %store the current version of string into UserData
+hFig.SizeChangedFcn = {@sizeChanged, debugger};
 %%
 
 %%
@@ -1208,7 +1219,10 @@ for k=1:nOps
 end
 
 opBytes{nOps+1} = uint8([2 255]);  %add EXIT as last operation
-
+operation(nOps+1).address = address;
+operation(nOps+1).opCodeName = 'EXIT';
+operation(nOps+1).opCodeByte= 255;
+operation(nOps+1).line = operation(nOps).line+1;
     
 if sum(jump>0) < nLabels
     warning('label unused')
@@ -1307,10 +1321,10 @@ fprintf('\n\n\n')
 
 if debugger
     cbDebugEnable.Enable = 'on';
-    bSingleStep.Enable = 'on';
-    cbDebugEnable.Callback = {@debugEnable, hnd, operation, nnp, scriptP};
-    bSingleStep.Callback = {@debugSingleStep, hnd, nnp, var, def, operation, si_operand, ei_operand, opcodelist} ;
-    bRunToLine.Callback = {@debugRunToLine, hnd, var, def, operation, si_operand, ei_operand};
+    bSingleStep.Enable = 'off';
+    cbDebugEnable.Callback = {@debugEnable, hnd, operation, nnp, scriptP, bSingleStep};
+    bSingleStep.Callback = {@debugSingleStep, hnd, nnp, operation, label, strPosOperand, strPosResult, opcodelist};
+    bRunToLine.Callback = {@debugRunToLine, hnd, nnp, operation, label, strPosOperand, strPosResult, opcodelist}; 
 end
 
 end
@@ -1535,10 +1549,10 @@ end
 
 
 
-function debugEnable(src, event, hLB, operation, nnp, sp)
+function debugEnable(src, event, hLB, operation, nnp, sp, button)
     
     if src.Value
-        disp('TODO: Enable Debugging')
+        disp('Enable Debugging')
         if ismember(sp, 1:25) 
             resp = nnp.nmt(7, 'AB', sp, 0); %TODO: support PDO/Alarm enabled scripts (Param2=1)
             if ~isequal(resp, hex2dec('AB'))
@@ -1562,11 +1576,13 @@ function debugEnable(src, event, hLB, operation, nnp, sp)
             if ~isempty(operation)
                 hLB.Value = operation(1).line;
             end
+            button.Enable = 'on';
         else
             msgbox('invalid script download location')
         end
     else
-        disp('TODO: Disable Debugging')
+        hLB.String = hLB.UserData;
+        disp('Disable Debugging')
         resp = nnp.nmt(7, 'AC'); 
         if ~isequal(resp, hex2dec('AC'))
             confirmNMT = false;
@@ -1586,15 +1602,16 @@ function debugEnable(src, event, hLB, operation, nnp, sp)
                 msgbox('Could not confirm NMT')
             end
         end
+        button.Enable = 'off';
     end
 end
 
 
-function debugSingleStep(src, event, hLB, nnp, var, def, operation, si_operand, ei_operand, opCodeList)
-    persistent op
-    if isempty(op) 
-        op = 1;
-    end
+function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList)
+%     persistent op
+%     if isempty(op) 
+%         op = 1;
+%     end
     
     %Need to make sure that the NMT command is not retried automatically if it does not get response
     radioSettings = nnp.getRadioSettings();
@@ -1609,26 +1626,81 @@ function debugSingleStep(src, event, hLB, nnp, var, def, operation, si_operand, 
         confirmNMT = true;
     end
   %%  
-    resp = nnp.read(7, '1f52', 1, 'uint8', 4); %read 8-bit status/control, exec number, opcode
-    if length(resp) == 4
-        control = resp(1);
-        status = resp(2);
-        exec = resp(3);
-        opcodeByte = resp(4);
-        
-        opcodeStr = opCodeList{cell2mat(opCodeList(:,2))==opcodeByte,1};
-        
-        fprintf('\ncontrol: 0x%02X, status: 0x%02X, exec: %d, opcode: %d %s\n', resp, opcodeStr);
-    else
-        %error
-        fprintf('\nerror reading control/status\n')
+    control = 1;
+    attempt = 1;
+     while control==1 % wait until debug step has completed
+        attempt = attempt + 1;
+        if attempt > 10
+            fprintf('\nscript line has not completed running.  may be at end\n')
+            break;
+        end
+         resp = nnp.read(7, '1f52', 1, 'uint8', 4); %read 8-bit status/control, exec number, opcode
+        if length(resp) == 4
+            control = resp(1);
+            status = resp(2);
+            exec = resp(3);
+            opcodeByte = resp(4);
+
+            opcodeStr = opCodeList{cell2mat(opCodeList(:,2))==opcodeByte,1};
+
+            fprintf('\ncontrol: 0x%02X, status: 0x%02X, exec: %d, opcode: %d %s\n', resp, opcodeStr);
+        else
+            %error
+            fprintf('\nerror reading control/status\n')
+        end
     end
     resp = nnp.read(7, '1f52', 5, 'uint32', 8);  %read 32-bit  types (opAddress, operands, result, timer)
     if length(resp) == 8
         baseaddress = hex2dec('30000')+10; %need to make this dependent on SP, 10 is for header
         address = resp(1);
         scriptBodyAddress = address - baseaddress; 
+        i = find(arrayfun(@(x) x.address == scriptBodyAddress, operation), 1);
+        if isempty(i)
+            disp(['no matching address: ' num2str(scriptBodyAddress)])
+        else
+            currentLine = operation(i).line;
+            fprintf('\ncurrent line %d\n', currentLine); 
 
+            if opcodeByte ~= operation(i).opCodeByte
+                disp(['opCodeByte from PM: ' num2str(opcodeByte) ' does not match current line: '  num2str(operation(i-1).opCodeByte)]);
+            end
+%             str = hLB.String{currentLine};
+
+            if currentLine > length(hLB.UserData)
+                disp('currentLine exceeds ListBox String length')
+            else
+                str = hLB.UserData{currentLine}; %User Data contains original (assemble/ not debug) String for ListBox
+                si_operand = strPosOperand(currentLine, 1);
+                ei_operand =strPosOperand(currentLine, 2);
+                si_result = strPosResult(currentLine, 1);
+                ei_result =strPosResult(currentLine, 2);
+                offset = 0;
+                if ~isnan(si_operand)
+                    operandStr = str(si_operand:ei_operand)
+
+                    [si_op, ei_op] = regexp(operandStr, '\s*((".*?")|(<.*?>)|(\[.*?\])|(!.*?!)|\S+)\s+');
+                    for j=1:length(ei_op)
+                        if isempty(operation(i).operand(j).literal)
+                            newStr = sprintf(' (%d) ', resp(j+1));
+                            operandStr = [operandStr(1:ei_op(j)+offset), newStr, operandStr(ei_op(j)+offset+1:end)];
+                            offset = offset + length(newStr);
+                        end
+                    end
+                    str = [str(1:si_operand-1), operandStr, str(ei_operand+1:end)];
+                end
+                if ~isnan(si_result)
+                    if operation(i).result.literal==0 %not a jump type
+                        resultStr = str((si_result:ei_result)+offset);
+                        newStr = sprintf(' (%d) ', resp(7));
+                        resultStr = [resultStr, newStr];
+                        str = [str(1:si_result+offset-1), resultStr, str(ei_result+offset+1:end)];
+                    end
+                end
+                hLB.String{currentLine} = str;
+            end
+            
+        end
+        
          fprintf('\naddress: 0x%08X, opVar0: %d, opVar1: %d, opVar2: %d, opVar3: %d, opVar4: %d, Result: %d, Timer: %d\n', resp);
     else
         %error
@@ -1663,17 +1735,64 @@ function debugSingleStep(src, event, hLB, nnp, var, def, operation, si_operand, 
     end
     resp = nnp.read(7, '1f52', 16, 'uint8'); %read jump value
     if length(resp) == 1
+        jump = resp;
         fprintf('\nJump 0x%02X\n', resp);
     else
         %error
         fprintf('\nerror reading jump\n')
     end
     %%
-    op = op+1;
-    if op<length(operation)
-         hLB.Value = operation(op).line;
-         %disp('TODO: Single Step');
+    %op = op+1;
+    %if op<length(operation)
+    
+
+    
+    done = false;
+    if isempty(i)
+        disp('Lost!')
+    else
+        if jump < 2
+            if (i+1)<=length(operation)
+                nextLine = operation(i+1).line;
+                if nextLine <= length(hLB.String)
+                    hLB.Value = nextLine;
+                else
+                    done = true;
+                end
+            else
+                done = true;
+            end
+        else
+            getLabel = operation(i).result.literal;
+            [isLabel, iLabel] = ismember(getLabel, label(:,1));
+            if isLabel
+                %find first operation following label
+                for j = length(operation):-1:1
+                    if operation(j).line >= label{iLabel,2}
+                        nextLine = operation(j).line;
+                    else
+                        break;
+                    end
+                end
+                if nextLine <= length(hLB.String)
+                    hLB.Value = nextLine;
+                else
+                    done = true;
+                end
+            else
+                disp('Could not find Label!')
+            end
+        end
+        if done
+            src.Enable = 'off';
+        end
     end
+    %if (i+1)==length(operation) 
+    %    msgbox('Done')
+    %end
+
+         %
+    %end
     
       
     if radioSettings.retries > 0 
@@ -1687,6 +1806,39 @@ function debugSingleStep(src, event, hLB, nnp, var, def, operation, si_operand, 
 %     end
 end
 
-function debugRunToLine(src, event, hLB, nnp, var, def, operation, si_operand, ei_operand)
+function debugRunToLine(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList)
     disp('Run to Line')
+    line = hLB.Value;
+    debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList)
+    while hLB.Value~= line 
+        drawnow
+        debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList)
+        if hLB.Value == length(hLB.String)
+            break;
+        end
+    end
+end
+
+function sizeChanged(src, event, debugger)
+    w = src.Position(3);
+    h = src.Position(4);
+
+    if w < 250
+        src.Position(3) = 250;
+        w = 250;
+    end
+    if h < 250
+        src.Position(4) = 250;
+        h = 250;
+    end
+
+    if debugger
+        src.Children(1).Position = [10 10 w-150 h-20]; %ListBox
+        src.Children(4).Position = [w-130 h-100 120 20]; %Checkbox
+        src.Children(2).Position = [w-130 h-150 120 20]; %singlestep
+        src.Children(3).Position = [w-130 h-200 120 20]; %run to
+    else
+        src.Children(1).Position = [10 10 w-10 h-20]; %ListBox
+    end
+
 end
