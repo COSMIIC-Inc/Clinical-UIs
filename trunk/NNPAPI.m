@@ -1111,7 +1111,8 @@ classdef NNPAPI < handle
         %    false      true       2.4
         %    true       false      1.2
         %    false      true       0.5
-        % TODO: limit retries?
+        % 
+        % For fastmode, recommend setting AP retries to 0
             dataOut = [];
 
             %handle cases where fewer arguments are passed
@@ -1153,6 +1154,11 @@ classdef NNPAPI < handle
                         disp('No EEPROM on PM')
                     end
                     memSelect = 4;
+                case{'ram', 'RAM','local ram','localram', 'Local Ram', 9}
+                    if node ~= 7
+                        disp('No RAM access on RMs yet')
+                    end
+                    memSelect = 9;
                 otherwise
                     error('Bad memory selection')
             end
@@ -1161,6 +1167,9 @@ classdef NNPAPI < handle
                 radioSettings = NNP.getRadioSettings();
                 if radioSettings.worInt > 0
                     NNP.worOff();
+                end
+                if radioSettings.retries > 0
+                    NNP.setRadio('retries', 0);
                 end
             end
 
@@ -1180,17 +1189,56 @@ classdef NNPAPI < handle
             end
 
             sendNMT = true; %only relevant for fastMode
+            retryCount = 0;
+            maxRetries = 3;
+            prevLen = len;
             while len > 0  
+                %fprintf('\nlen %d, prev %d\n', len, prevLen);
+               
+                if len == prevLen 
+                    retryCount = retryCount + 1;
+                    if retryCount > maxRetries
+                        userResp = questdlg(['Main loop in readMemory has exceeded ' num2str(maxRetries) ' retries.  Do you want to continue trying?']);
+                        if isequal(userResp, 'No') 
+                            dataOut = [];
+                            break;
+                        else
+                            retryCount = 0;
+                            continue;
+                        end
+                    end
+                else
+                    retryCount = 0;
+                end
+                prevLen = len;
+                
                 if fastMode
-                    while sendNMT
+                    retryNMT=0;
+                    while sendNMT 
                         resp = NNP.nmt(node, 'D0', memSelect); %Force read with auto increment
                         if isequal(resp, hex2dec('D0'))
                             break;
-                        elseif  address < NNP.read(node, '2020', 1, 'uint32')   %get address
-                            disp('NMT was not confirmed directly but address has incremented')
-                            break
                         else
-                            disp('Retrying: send NMT_Read_Memory_Now')
+                            addressRead = NNP.read(node, '2020', 1, 'uint32');   %get address
+                            if isequal(addressRead, address + 32)
+                                disp('NMT was not confirmed directly but address has incremented correctly')
+                                break
+                            else
+                                NNP.write(node, '2020', 1, address, 'uint32');   %reset address 
+                                disp('Retrying: send NMT_Read_Memory_Now')
+                                retryNMT = retryNMT + 1;
+                                if retryNMT > maxRetries
+                                    userResp = questdlg(['Send NMT loop in readMemory has exceeded ' num2str(maxRetries) ' retries.  Do you want to continue trying?']);
+                                    if isequal(userResp, 'No') 
+                                        len = 0; %break outer loop gracefully
+                                        dataOut = [];
+                                        break;
+                                    else
+                                        retryNMT = 0;
+                                        continue;
+                                    end
+                                end
+                            end
                         end
                     end
                 else
@@ -1225,13 +1273,16 @@ classdef NNPAPI < handle
                         continue;
                     else
                         %No known error or couldn't read error
+                        if fastMode
+                            NNP.write(node, '2020', 1, address, 'uint32');   %reset address
+                        end
                         fprintf('\nRetrying: address back (0x%08x) does not match 0x%08x\n', addressback, address);
                         continue;
                     end
                 end
                 mem = dataRX(1:end-4)';
                 if length(mem) > len
-                    mem = mem(1:len); %cut 
+                    mem = mem(1:len); %mem should always be 32 long, but we may only want part of it
                 end
                 if(print) %up to 32 bytes per line
                     if printAddress
@@ -1245,8 +1296,13 @@ classdef NNPAPI < handle
                 len = len - length(mem);
                 address = address + length(mem);
             end
-            if disableWOR && radioSettings.worInt > 0
-                NNP.worOn(radioSettings.worInt);
+            if disableWOR 
+                if radioSettings.worInt > 0
+                    NNP.worOn(radioSettings.worInt);
+                end
+                if radioSettings.retries > 0
+                    NNP.setRadio('retries', radioSettings.retries);
+                end
             end
         end
         

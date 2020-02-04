@@ -1323,8 +1323,8 @@ if debugger
     cbDebugEnable.Enable = 'on';
     bSingleStep.Enable = 'off';
     cbDebugEnable.Callback = {@debugEnable, hnd, operation, nnp, scriptP, bSingleStep};
-    bSingleStep.Callback = {@debugSingleStep, hnd, nnp, operation, label, strPosOperand, strPosResult, opcodelist};
-    bRunToLine.Callback = {@debugRunToLine, hnd, nnp, operation, label, strPosOperand, strPosResult, opcodelist}; 
+    bSingleStep.Callback = {@debugSingleStep, hnd, nnp, operation, label, strPosOperand, strPosResult, opcodelist, scriptP};
+    bRunToLine.Callback = {@debugRunToLine, hnd, nnp, operation, label, strPosOperand, strPosResult, opcodelist, scriptP}; 
 end
 
 end
@@ -1395,6 +1395,38 @@ function code = scopeStr2Code(str)
             code = 32; %0x20
         case 'global'
             code = 48; %0x30
+    end
+end
+
+function result = isPointer(operand)
+% returs 0 if not a pointer, 1 if must be a pointer, and 2 for ambiguous
+% multi-subindex network operands must be pointer, but all other network operands are ambiguous, because they could be
+% arrays or strings
+    if isempty(operand.typeScopePair) %network with single literal subindex (2), variable (0 or 1), or literal (0 or 1)  
+        if ~isempty(operand.network) 
+            result = 2;
+        else
+            type = bitand(operand.typeScope, 15);
+            if ismember(type, [0:7 11]) %scalar numeric type
+                result = 0;
+            else %string or bytearray
+                result = 1;
+            end
+        end
+    else %network with variable or multiple subindices (1 or 2), array (1), or array element (0) 
+        if isempty(operand.network) %array
+            if isequal(operand.literalPair, [254 255]) %0xFFFE
+                result = 1;
+            else
+                result = 0;
+            end
+        else %network
+            if operand.network.nSubIndices > 1
+                result = 1;
+            else
+                result = 2;
+            end
+        end
     end
 end
 
@@ -1607,7 +1639,7 @@ function debugEnable(src, event, hLB, operation, nnp, sp, button)
 end
 
 
-function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList)
+function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp)
 %     persistent op
 %     if isempty(op) 
 %         op = 1;
@@ -1651,7 +1683,8 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
     end
     resp = nnp.read(7, '1f52', 5, 'uint32', 8);  %read 32-bit  types (opAddress, operands, result, timer)
     if length(resp) == 8
-        baseaddress = hex2dec('30000')+10; %need to make this dependent on SP, 10 is for header
+        baseaddress = hex2dec('30000')+(sp-1)*2048+10; %need to make this dependent on SP, 10 is for header
+        baseRAM = hex2dec('40000000');
         address = resp(1);
         scriptBodyAddress = address - baseaddress; 
         i = find(arrayfun(@(x) x.address == scriptBodyAddress, operation), 1);
@@ -1676,12 +1709,24 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
                 ei_result =strPosResult(currentLine, 2);
                 offset = 0;
                 if ~isnan(si_operand)
-                    operandStr = str(si_operand:ei_operand)
+                    operandStr = str(si_operand:ei_operand);
 
                     [si_op, ei_op] = regexp(operandStr, '\s*((".*?")|(<.*?>)|(\[.*?\])|(!.*?!)|\S+)\s+');
                     for j=1:length(ei_op)
                         if isempty(operation(i).operand(j).literal)
-                            newStr = sprintf(' (%d) ', resp(j+1));
+                            if resp(j+1) >= baseRAM %may be pointer to RAM rather than value
+                                switch isPointer(operation(i).operand(j))
+                                    case 0 %not a pointer
+                                        newStr = sprintf(' (%d) ', resp(j+1));
+                                    case 1 %must be a pointer
+                                        newStr = sprintf(' (*%d) ', resp(j+1)-baseRAM);
+                                    case 2 %may be a pointer (not sure with network operands)
+                                        newStr = sprintf(' (%d OR *%d) ', resp(j+1), resp(j+1)-baseRAM);
+                                end
+                            else %not a pointer
+                                newStr = sprintf(' (%d) ', resp(j+1));
+                            end
+                            
                             operandStr = [operandStr(1:ei_op(j)+offset), newStr, operandStr(ei_op(j)+offset+1:end)];
                             offset = offset + length(newStr);
                         end
@@ -1691,7 +1736,14 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
                 if ~isnan(si_result)
                     if operation(i).result.literal==0 %not a jump type
                         resultStr = str((si_result:ei_result)+offset);
-                        newStr = sprintf(' (%d) ', resp(7));
+                        switch isPointer(operation(i).result)
+                            case 0 %not a pointer
+                                newStr = sprintf(' (%d) ', resp(7));
+                            case 1 %must be a pointer
+                                newStr = sprintf(' (*%d) ', resp(7)-baseRAM);
+                            case 2 %may be a pointer (not sure with network operands)
+                                newStr = sprintf(' (%d OR *%d) ', resp(7), resp(7)-baseRAM);
+                        end
                         resultStr = [resultStr, newStr];
                         str = [str(1:si_result+offset-1), resultStr, str(ei_result+offset+1:end)];
                     end
@@ -1733,12 +1785,14 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
         %error
         fprintf('\nerror reading Var Table Info\n')
     end
+    
     resp = nnp.read(7, '1f52', 16, 'uint8'); %read jump value
     if length(resp) == 1
         jump = resp;
         fprintf('\nJump 0x%02X\n', resp);
     else
         %error
+        jump = [];
         fprintf('\nerror reading jump\n')
     end
     %%
@@ -1806,7 +1860,7 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
 %     end
 end
 
-function debugRunToLine(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList)
+function debugRunToLine(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp)
     disp('Run to Line')
     line = hLB.Value;
     debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList)
@@ -1842,3 +1896,5 @@ function sizeChanged(src, event, debugger)
     end
 
 end
+
+
