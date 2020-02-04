@@ -1068,7 +1068,7 @@ debugger = true;
 if isempty(hFig)
     hFig = figure();
     hFig.Name = 'Script Assembler - Debugger';
-    w = 500;
+    w = 1000;
     h= 800;
     hFig.Position =[100 100 w h];
     hFig.NumberTitle = 'off';
@@ -1080,6 +1080,8 @@ if isempty(hFig)
         bSingleStep = uicontrol(hFig, 'Style', 'pushbutton', 'String', 'Single Step', 'Position', [w-130 h-150 120 40]);
         bRunToLine = uicontrol(hFig, 'Style', 'pushbutton', 'String', 'Run to Line', 'Position', [w-130 h-200 120 40]);
     end
+    lFontSize = uicontrol(hFig, 'Style', 'text', 'String', 'Fontsize:','Position', [w-130 h-45 80 20]);
+    eFontSize = uicontrol(hFig, 'Style', 'edit',  'String', '12','Value', 12,'Position', [w-50 h-40 40 20]);
 
 end
 
@@ -1322,10 +1324,13 @@ fprintf('\n\n\n')
 if debugger
     cbDebugEnable.Enable = 'on';
     bSingleStep.Enable = 'off';
-    cbDebugEnable.Callback = {@debugEnable, hnd, operation, nnp, scriptP, bSingleStep};
-    bSingleStep.Callback = {@debugSingleStep, hnd, nnp, operation, label, strPosOperand, strPosResult, opcodelist, scriptP};
-    bRunToLine.Callback = {@debugRunToLine, hnd, nnp, operation, label, strPosOperand, strPosResult, opcodelist, scriptP}; 
+    bRunToLine.Enable = 'off';
+    buttons = [bSingleStep bRunToLine];
+    cbDebugEnable.Callback = {@debugEnable, hnd, operation, nnp, scriptP, buttons};
+    bSingleStep.Callback = {@debugSingleStep, hnd, nnp, operation, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable};
+    bRunToLine.Callback = {@debugRunToLine, hnd, nnp, operation, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable}; 
 end
+eFontSize.Callback = {@fontSizeChanged, hnd};
 
 end
 
@@ -1581,7 +1586,7 @@ end
 
 
 
-function debugEnable(src, event, hLB, operation, nnp, sp, button)
+function debugEnable(src, event, hLB, operation, nnp, sp, buttons)
     
     if src.Value
         disp('Enable Debugging')
@@ -1608,7 +1613,9 @@ function debugEnable(src, event, hLB, operation, nnp, sp, button)
             if ~isempty(operation)
                 hLB.Value = operation(1).line;
             end
-            button.Enable = 'on';
+            for b=1:length(buttons)
+                buttons(b).Enable = 'on';
+            end
         else
             msgbox('invalid script download location')
         end
@@ -1634,12 +1641,14 @@ function debugEnable(src, event, hLB, operation, nnp, sp, button)
                 msgbox('Could not confirm NMT')
             end
         end
-        button.Enable = 'off';
+        for b=1:length(buttons)
+            buttons(b).Enable = 'off';
+        end
     end
 end
 
 
-function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp)
+function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox)
 %     persistent op
 %     if isempty(op) 
 %         op = 1;
@@ -1838,7 +1847,8 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
             end
         end
         if done
-            src.Enable = 'off';
+            checkbox.Value = false;
+            debugEnable(checkbox, event, hLB, operation, nnp, sp, buttons)
         end
     end
     %if (i+1)==length(operation) 
@@ -1860,16 +1870,21 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
 %     end
 end
 
-function debugRunToLine(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp)
+function debugRunToLine(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox)
     disp('Run to Line')
     line = hLB.Value;
-    debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList)
-    while hLB.Value~= line 
+    debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox)
+    h = msgbox('May run indefinitely - Hit OK to Cancel');
+    while hLB.Value~= line && isgraphics(h)
         drawnow
-        debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList)
+        debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox)
         if hLB.Value == length(hLB.String)
             break;
         end
+    end
+    if isgraphics(h)
+        close(h)
+        delete(h)
     end
 end
 
@@ -1888,13 +1903,21 @@ function sizeChanged(src, event, debugger)
 
     if debugger
         src.Children(1).Position = [10 10 w-150 h-20]; %ListBox
-        src.Children(4).Position = [w-130 h-100 120 20]; %Checkbox
-        src.Children(2).Position = [w-130 h-150 120 20]; %singlestep
-        src.Children(3).Position = [w-130 h-200 120 20]; %run to
-    else
-        src.Children(1).Position = [10 10 w-10 h-20]; %ListBox
+        src.Children(2).Position = [w-50 h-40 40 20]; %FontSize Edit
+        src.Children(3).Position = [w-130 h-45 80 20]; %FontSize Label
+        src.Children(4).Position = [w-130 h-200 120 40]; %run to line
+        src.Children(5).Position = [w-130 h-150 120 40]; %single step
+        src.Children(6).Position = [w-130 h-100 120 20]; %Checkbox
     end
 
 end
 
-
+function fontSizeChanged(src, event, hLB)
+    f = str2double(src.String);
+    if ~isnan(f)
+        hLB.FontSize = f;
+        src.Value = f;
+    else
+        src.String = num2str(src.Value);
+    end    
+end
