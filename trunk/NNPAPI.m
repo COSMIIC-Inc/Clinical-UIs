@@ -1306,6 +1306,59 @@ classdef NNPAPI < handle
             end
         end
         
+        function [result] = loadScript(NNP, SP, data)
+            %result = LOADSCRIPT(NNP, SP, data) loads data to location specified by SP
+            %   SP is script pointer (i.e. script download location (1-25)
+
+            T = 32; %up to 48, SE uses 32 (max bytes to transfer per radio packet)
+            N = length(data);
+            nPackets = floor(N/T) + double(rem(N,T)>0);
+            result = [];
+
+            counter = nPackets -1;
+            address = 0;
+
+            settings = NNP.getRadioSettings;
+            if settings.rxTimeout<100
+                NNP.setRadio('Timeout', 100)
+            end
+
+            for i=1:nPackets
+                addrBytes = typecast(uint16(address), 'uint8');
+
+
+                if i==nPackets % last packet
+                    pktN = rem(N,T);
+                    if pktN==0
+                        pktN = T;
+                    end
+                    NNP.setRadio('Timeout', 251) %1s timeout
+                else
+                    pktN = T;
+                end
+
+                pktData = data(address+1:address+pktN);
+                if size(pktData, 1)>1
+                    pktData = pktData'; % change column vector to row vector
+                end
+                %counter = 0;
+                message = [hex2dec('50'), hex2dec('1f'), SP, pktN+2, addrBytes, pktData];
+                [result, err]= NNP.transmit(7, message, counter, hex2dec('A4'));
+                if err
+                    disp(NNP.lastError)
+                end
+                if ~isequal(result, [1 0])
+                    NNP.setRadio('Timeout', settings.rxTimeout)
+                    return
+                end
+                pause(0.1)
+                address = address + T; 
+                counter = counter-1;
+            end
+        end
+
+
+        
         %% Shortcuts 
         function success = networkOn(NNP)
         % NETWORKON -turn ON network (must be in waiting mode)

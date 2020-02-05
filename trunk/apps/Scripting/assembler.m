@@ -1,21 +1,24 @@
-function [download, var, def, operation] = assembler(scriptID, file, hFig, scriptP, nnp)
+function [download, hFig, var, def, operation] = assembler(scriptID, file, hFig, scriptP, nnp, scriptName)
 
 download = [];
-if nargin<5
-    nnp=[];
-    if nargin<4
-        scriptP = 0;
-        if nargin<3
-            hFig = [];
-            if nargin<2
-                [filename, pathname ] = uigetfile('*.nnpscript', 'Choose Script File');
-                if filename == 0 
-                    return
-                else
-                    file = [pathname filename];
-                end
-                if nargin<1
-                    scriptID = str2double(inputdlg('scriptID'));
+if nargin<6
+    scriptName = [];
+    if nargin<5
+        nnp=[];
+        if nargin<4
+            scriptP = 0;
+            if nargin<3
+                hFig = [];
+                if nargin<2
+                    [filename, pathname ] = uigetfile('*.nnpscript', 'Choose Script File');
+                    if filename == 0 
+                        return
+                    else
+                        file = [pathname filename];
+                    end
+                    if nargin<1
+                        scriptID = str2double(inputdlg('scriptID'));
+                    end
                 end
             end
         end
@@ -1069,26 +1072,31 @@ if isempty(hFig)
     hFig = figure();
     hFig.Name = 'Script Assembler - Debugger';
     w = 1000;
-    h= 800;
+    h = 800;
     hFig.Position =[100 100 w h];
     hFig.NumberTitle = 'off';
     hFig.MenuBar = 'none';
     hFig.ToolBar = 'none';
-    
-    if debugger
-        cbDebugEnable = uicontrol(hFig, 'Style', 'checkbox', 'String', 'Enable Debugging', 'Position', [w-130 h-100 120 20]);
-        bSingleStep = uicontrol(hFig, 'Style', 'pushbutton', 'String', 'Single Step', 'Position', [w-130 h-150 120 40]);
-        bRunToLine = uicontrol(hFig, 'Style', 'pushbutton', 'String', 'Run to Line', 'Position', [w-130 h-200 120 40]);
-    end
-    lFontSize = uicontrol(hFig, 'Style', 'text', 'String', 'Fontsize:','Position', [w-130 h-45 80 20]);
-    eFontSize = uicontrol(hFig, 'Style', 'edit',  'String', '12','Value', 12,'Position', [w-50 h-40 40 20]);
-
+else
+    w = hFig.Position(3);
+    h = hFig.Position(4);
 end
 
+hFig.Name = ['Assembler-Debugger: ', scriptName, ' (scriptID:', num2str(scriptID), ', #', num2str(scriptP), ')'];
 
-%hnd = uitable('Position', [10 10 900 780],'Data',B, 'FontName', 'monospaced', 'FontSize', 12, 'ColumnWidth', {900}, 'ColumnEditable', true)
-hnd = uicontrol(hFig, 'Style','listbox','String',B, 'FontName', 'monospaced', 'FontSize', 12, 'Position', [10 10 w-150 h-20]);
-hnd.UserData = hnd.String; %store the current version of string into UserData
+if debugger
+    cbDebugEnable = uicontrol(hFig, 'Style', 'checkbox', 'String', 'Enable Debugging', 'Position', [w-130 h-100 120 20]);
+    bSingleStep = uicontrol(hFig, 'Style', 'pushbutton', 'String', 'Single Step', 'Position', [w-130 h-150 120 40]);
+    bRunToLine = uicontrol(hFig, 'Style', 'pushbutton', 'String', 'Run to Line', 'Position', [w-130 h-200 120 40]);
+    bDownload = uicontrol(hFig, 'Style', 'pushbutton', 'String', 'Download', 'Position', [w-130 h-250 120 40]);
+end
+lFontSize = uicontrol(hFig, 'Style', 'text', 'String', 'Fontsize:','Position', [w-130 h-45 80 20]);
+eFontSize = uicontrol(hFig, 'Style', 'edit',  'String', '12','Value', 12,'Position', [w-50 h-40 40 20]);
+hLB = uicontrol(hFig, 'Style','listbox','String',B, 'FontName', 'monospaced', 'FontSize', 12, 'Position', [10 10 w-150 h-20]);
+
+
+
+hLB.UserData = hLB.String; %store the current version of string into UserData
 hFig.SizeChangedFcn = {@sizeChanged, debugger};
 %%
 
@@ -1326,11 +1334,12 @@ if debugger
     bSingleStep.Enable = 'off';
     bRunToLine.Enable = 'off';
     buttons = [bSingleStep bRunToLine];
-    cbDebugEnable.Callback = {@debugEnable, hnd, operation, nnp, scriptP, buttons};
-    bSingleStep.Callback = {@debugSingleStep, hnd, nnp, operation, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable};
-    bRunToLine.Callback = {@debugRunToLine, hnd, nnp, operation, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable}; 
+    cbDebugEnable.Callback = {@debugEnable, hLB, operation, nnp, scriptP, buttons};
+    bSingleStep.Callback = {@debugSingleStep, hLB, nnp, operation, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable};
+    bRunToLine.Callback = {@debugRunToLine, hLB, nnp, operation, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable}; 
+    bDownload.Callback = {@downloadScript};
 end
-eFontSize.Callback = {@fontSizeChanged, hnd};
+eFontSize.Callback = {@fontSizeChanged, hLB};
 
 end
 
@@ -1896,18 +1905,19 @@ function sizeChanged(src, event, debugger)
         src.Position(3) = 250;
         w = 250;
     end
-    if h < 250
-        src.Position(4) = 250;
-        h = 250;
+    if h < 280
+        src.Position(4) = 280;
+        h = 280;
     end
 
     if debugger
         src.Children(1).Position = [10 10 w-150 h-20]; %ListBox
         src.Children(2).Position = [w-50 h-40 40 20]; %FontSize Edit
         src.Children(3).Position = [w-130 h-45 80 20]; %FontSize Label
-        src.Children(4).Position = [w-130 h-200 120 40]; %run to line
-        src.Children(5).Position = [w-130 h-150 120 40]; %single step
-        src.Children(6).Position = [w-130 h-100 120 20]; %Checkbox
+        src.Children(4).Position = [w-130 h-250 120 40]; %download
+        src.Children(5).Position = [w-130 h-200 120 40]; %run to line
+        src.Children(6).Position = [w-130 h-150 120 40]; %single step
+        src.Children(7).Position = [w-130 h-100 120 20]; %Checkbox
     end
 
 end
@@ -1920,4 +1930,8 @@ function fontSizeChanged(src, event, hLB)
     else
         src.String = num2str(src.Value);
     end    
+end
+
+function downloadScript(src, event)
+    msgbox('Not yet implemented: use download button in scriptedit "Script Library" tab');
 end
