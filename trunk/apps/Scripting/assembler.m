@@ -164,6 +164,34 @@ opcodelist = { ...
     'VECMUL',123,2,2, 'VectorA (elementwise*) VectorB (or scalar)->Vector',1,0,0;
     'VECDIV',124,2,2, 'VectorA (elementwise/) VectorB (or scalar)->Vector',1,0,0;
     'EXIT',255,0,0, 'Terminate Script',0,0,0};
+ 
+
+scripterrors = {'';                    %0
+                'INVALID_OPCODE';      %1
+                'ARRAYINDEX';          %2
+                'ODSUBINDEX';     	   %3
+                'UNUSED_4';            %4
+                'RESULT_IS_IMMEDIATE'; %5
+                'RESULT_IS_CONSTANT';  %6
+                'TOO_MANY_STACK_VARIABLES'; %7
+                'DESTINATIONARRAY';	%8
+                'DESTINATIONSTRING'; %9
+                'JUMPOPERAND';	%10
+                'OPERAND_TYPE';	%11
+                'OPERAND_OUT_OF_RANGE'; %12
+                'SCALAR_TO_POINTER'; %13
+                'POINTER_TO_SCALAR'; %14
+                'INVALID_CHILD_SCRIPT'; %15
+                'UNUSED_16'; %16
+                'DIVIDEBYZERO'; 	%17
+                'GETNETWORKDATA';	%18
+                'SETNETWORKDATA';	%19
+                'UNUSED_20'; %20
+                'OPERAND_TYPE_MISMATCH';	%21
+                'UNUSED_22'; %22
+                'UNUSED_23'; %23
+                'RESETGLOBALS_FAILED';	%24
+                'ABORTED';};	%25
 
 %% For generating Noptepad++ UDL keywords
 opcodelistStr = [];
@@ -802,6 +830,8 @@ for i = 1:nLines
                                     [isDefinedVarEl, iDefinedVarEl] = ismember(subIndexStrVar, varnames);
                                     if isDefinedVarEl
                                         if isNumericType(var(iDefinedVarEl).type) && var(iDefinedVarEl).array == 0
+                                            disp(['found usage of:' varnames{iDefinedVarEl} ' as variable subindex']);
+                                            varUsage = [varUsage; iDefinedVarEl];
                                             scopeEl = scopeStr2Code(var(iDefinedVarEl).scope);
                                             typeEl = typeStr2Code(var(iDefinedVarEl).type);
                                             typemodEl = 192; %0xC0
@@ -1023,7 +1053,7 @@ for i = 1:nLines
         end
         
         if ~isempty(ei_unknown)
-            formattedtext=[formattedtext '<FONT COLOR="red"><i><u>' A{i}(si_unknown:ei_unknown) '</i></u>'];
+            formattedtext=[formattedtext '<FONT COLOR="purple"><i><u>' A{i}(si_unknown:ei_unknown) '</i></u>'];
         end
 
 
@@ -1036,7 +1066,7 @@ for i = 1:nLines
         end
         
         if ~isempty(ei_unused)
-            formattedtext=[formattedtext '<FONT COLOR="red"><i><u>' A{i}(si_unused:ei_unused) '</i></u>'];
+            formattedtext=[formattedtext '<FONT COLOR="purple"><i><u>' A{i}(si_unused:ei_unused) '</i></u>'];
         end
         
         if ~isempty(ei_varinit)
@@ -1228,7 +1258,12 @@ for j = 1:length(varOrder)
 
 end
 % ------------  end generate variable tables  -------------%
-        
+
+if ~isempty(errStr)
+    msgbox('Quitting assembly - fix errors and try again' );
+    return;
+end
+
 % ------------ start generate download bytes ----------- %
 i_jump = 0;
 jump = zeros(nOps,1);
@@ -1240,7 +1275,7 @@ for k=1:nOps
     try 
         [opBytes{k}, jump(k)] = assembleOperation(operation(k), var, label, copyResult);
     catch
-        disp(['Quitting assembly.  Could not assemble operation ' num2str(k) ', Line: ' num2str(operation(k).line)]);
+        msgbox(['Quitting assembly.  Could not assemble operation ' num2str(k) ', Line: ' num2str(operation(k).line)]);
         return;
     end
     operation(k).address = address;
@@ -1353,9 +1388,9 @@ if debugger
     bSingleStep.Enable = 'off';
     bRunToLine.Enable = 'off';
     buttons = [bSingleStep bRunToLine];
-    cbDebugEnable.Callback = {@debugEnable, hLB, operation, nnp, scriptP, buttons};
-    bSingleStep.Callback = {@debugSingleStep, hLB, nnp, operation, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable};
-    bRunToLine.Callback = {@debugRunToLine, hLB, nnp, operation, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable}; 
+    cbDebugEnable.Callback = {@debugEnable, hLB, operation, nnp, scriptP, buttons, scripterrors};
+    bSingleStep.Callback = {@debugSingleStep, hLB, nnp, operation, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable, scripterrors};
+    bRunToLine.Callback = {@debugRunToLine, hLB, nnp, operation, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable, scripterrors}; 
     bDownload.Callback = {@downloadScript};
 end
 eFontSize.Callback = {@fontSizeChanged, hLB};
@@ -1614,7 +1649,7 @@ end
 
 
 
-function debugEnable(src, event, hLB, operation, nnp, sp, buttons)
+function debugEnable(src, event, hLB, operation, nnp, sp, buttons, scripterrors)
     
     if src.Value
         disp('Enable Debugging')
@@ -1631,7 +1666,14 @@ function debugEnable(src, event, hLB, operation, nnp, sp, buttons)
                 disp(control)
                 status = resp(2);
                 if status > 0
-                    msgbox(['Error: ' num2str(status)])
+                    if status ==19 %TODO: fix this when PM script errors are corrected
+                        msgbox('May not have enabled script debugging ')
+                    end
+%                     if status < length(scripterrors)
+%                         msgbox(['Runtime Error: ' scripterrors{status+1}])
+%                     else
+%                         msgbox(['Unknown Runtime Error: ' num2str(status)])
+%                     end
                 end
             else
                 if ~confirmNMT
@@ -1662,7 +1704,10 @@ function debugEnable(src, event, hLB, operation, nnp, sp, buttons)
             disp(control)
             status = resp(2);
             if status > 0
-                msgbox(['Error: ' num2str(status)])
+                if status ==19 %TODO: fix this when PM script errors are corrected
+                    msgbox('May not have enabled script debugging ')
+                end
+                %msgbox(['Error: ' num2str(status)])
             end
         else
             if ~confirmNMT
@@ -1676,11 +1721,8 @@ function debugEnable(src, event, hLB, operation, nnp, sp, buttons)
 end
 
 
-function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox)
-%     persistent op
-%     if isempty(op) 
-%         op = 1;
-%     end
+function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox, scripterrors)
+
     
     %Need to make sure that the NMT command is not retried automatically if it does not get response
     radioSettings = nnp.getRadioSettings();
@@ -1697,7 +1739,8 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
   %%  
     control = 1;
     attempt = 1;
-     while control==1 % wait until debug step has completed
+    status = 0;
+     while control==1 && status == 0 % wait until debug step has completed
         attempt = attempt + 1;
         if attempt > 10
             fprintf('\nscript line has not completed running.  may be at end\n')
@@ -1717,6 +1760,16 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
             %error
             fprintf('\nerror reading control/status\n')
         end
+     end
+    if status > 0
+        if status < length(scripterrors)
+            msgbox(['Runtime Error: ',  scripterrors{status+1}])
+        else
+            msgbox(['Unknown Runtime Error: ', num2str(status)])
+        end
+        %disable further debugging
+        checkbox.Value = false;
+        debugEnable(checkbox, event, hLB, operation, nnp, sp, buttons)
     end
     resp = nnp.read(7, '1f52', 5, 'uint32', 8);  %read 32-bit  types (opAddress, operands, result, timer)
     if length(resp) == 8
@@ -1724,7 +1777,7 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
         baseRAM = hex2dec('40000000');
         address = resp(1);
         scriptBodyAddress = address - baseaddress; 
-        i = find(arrayfun(@(x) x.address == scriptBodyAddress, operation), 1);
+        i = find(arrayfun(@(x) x.address == scriptBodyAddress, operation), 1); %find operation matching current address
         if isempty(i)
             disp(['no matching address: ' num2str(scriptBodyAddress)])
         else
@@ -1732,7 +1785,11 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
             fprintf('\ncurrent line %d\n', currentLine); 
 
             if opcodeByte ~= operation(i).opCodeByte
-                disp(['opCodeByte from PM: ' num2str(opcodeByte) ' does not match current line: '  num2str(operation(i-1).opCodeByte)]);
+                if i<2
+                    disp ('why here?')
+                else
+                    disp(['opCodeByte from PM: ' num2str(opcodeByte) ' does not match current line: '  num2str(operation(i-1).opCodeByte)]);
+                end
             end
 %             str = hLB.String{currentLine};
 
@@ -1773,13 +1830,17 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
                 if ~isnan(si_result)
                     if operation(i).result.literal==0 %not a jump type
                         resultStr = str((si_result:ei_result)+offset);
-                        switch isPointer(operation(i).result)
-                            case 0 %not a pointer
-                                newStr = sprintf(' (%d) ', resp(7));
-                            case 1 %must be a pointer
-                                newStr = sprintf(' (*%d) ', resp(7)-baseRAM);
-                            case 2 %may be a pointer (not sure with network operands)
-                                newStr = sprintf(' (%d OR *%d) ', resp(7), resp(7)-baseRAM);
+                        if resp(7) >= baseRAM %may be pointer to RAM rather than value
+                            switch isPointer(operation(i).result)
+                                case 0 %not a pointer
+                                    newStr = sprintf(' (%d) ', resp(7));
+                                case 1 %must be a pointer
+                                    newStr = sprintf(' (*%d) ', resp(7)-baseRAM);
+                                case 2 %may be a pointer (not sure with network operands)
+                                    newStr = sprintf(' (%d OR *%d) ', resp(7), resp(7)-baseRAM);
+                            end
+                        else %not a pointer
+                             newStr = sprintf(' (%d) ', resp(7));
                         end
                         resultStr = [resultStr, newStr];
                         str = [str(1:si_result+offset-1), resultStr, str(ei_result+offset+1:end)];
@@ -1793,6 +1854,7 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
          fprintf('\naddress: 0x%08X, opVar0: %d, opVar1: %d, opVar2: %d, opVar3: %d, opVar4: %d, Result: %d, Timer: %d\n', resp);
     else
         %error
+        i = [];
         fprintf('\nerror reading Operand Values\n')
     end
     resp = nnp.read(7, '1f52', 13, 'uint8'); %read first 32 stack variable bytes
@@ -1898,14 +1960,14 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
 %     end
 end
 
-function debugRunToLine(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox)
+function debugRunToLine(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox, scripterrors)
     disp('Run to Line')
     line = hLB.Value;
-    debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox)
+    debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox , scripterrors)
     h = msgbox('May run indefinitely - Hit OK to Cancel');
     while hLB.Value~= line && isgraphics(h)
         drawnow
-        debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox)
+        debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox, scripterrors)
         if hLB.Value == length(hLB.String)
             break;
         end
