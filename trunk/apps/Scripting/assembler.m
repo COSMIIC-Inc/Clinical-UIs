@@ -211,6 +211,7 @@ for i = 1:nLines
     fprintf('\nLine %3.0f: ', i)
     nOperands = 0;
     nResult = 0;
+    errStr = [];
     warnStr = [];
     
     formattedtext = ['<HTML><pre><FONT COLOR="black">' sprintf('%03u  ', i)]; %use <pre> tag to prevent deleting whitespace in HTML
@@ -281,7 +282,7 @@ for i = 1:nLines
                 isLabel = false;
             end
             if isLabel
-                warnStr = addText(warnStr, ['Label already used at line:' num2str(label{iLabel,2})]); %TODO: change to errstr
+                errStr = addText(errStr, ['Label already used at line:' num2str(label{iLabel,2})]); 
             else
                 i_label = i_label + 1;
                 label{i_label,1} = newLabel;
@@ -458,7 +459,7 @@ for i = 1:nLines
                             var(i_var).name = opStr(1:iArray-1);
                             nEl = str2double(opStr(iArray+1:end-1));
                             if isnan(nEl) || length(nEl) ~=1
-                                 warnStr=addText(warnStr,'invalid number of elements' ); %todo change to errStr
+                                 errStr=addText(errStr,'invalid number of elements' ); 
                             else
                                 var(i_var).array = nEl;
                             end
@@ -488,9 +489,9 @@ for i = 1:nLines
                         
                         if nOperands < minOperands
                             if minOperands==maxOperands
-                                warnStr=addText(warnStr, sprintf('requires %1.0f operands', minOperands)); %TODO:change to errStr
+                                errStr=addText(errStr, sprintf('requires %1.0f operands', minOperands)); 
                             else
-                                warnStr=addText(warnStr, sprintf('requires %1.0f-%1.0f operands', minOperands,maxOperands)); %TODO:change to errStr
+                                errStr=addText(errStr, sprintf('requires %1.0f-%1.0f operands', minOperands,maxOperands)); 
                             end
                             si_operand = ei_op(1)+1;
                             ei_operand = endparse;
@@ -555,7 +556,7 @@ for i = 1:nLines
                     jumpResult = opcodelist{operation(i_op).index,7}==1;
                     if isempty(ei_result)
                         warnStr = [];
-                        warnStr=addText(warnStr,'opcode requires a result - ignoring operation'); %todo: change to errStr
+                        warnStr=addText(warnStr,'opcode requires a result - ignoring operation'); 
                         %ignore this operation
                         nResult = 0;
                         nOperands = 0;
@@ -673,7 +674,7 @@ for i = 1:nLines
                             type = 7;
                             operand = typecast(uint32(operand), 'uint8');
                         catch
-                            warnStr=addText(warnStr, 'invalid binary literal: 0b...');  %TODO: change to errStr
+                            errStr=addText(errStr, 'invalid binary literal: 0b...');  
                         end
                     elseif length(operandStr)>2 && isequal(operandStr(1:2), '0x') %numeric hex literal (scalar)
                         try
@@ -682,7 +683,7 @@ for i = 1:nLines
                             type = 7;
                             operand = typecast(uint32(operand), 'uint8');
                         catch
-                            warnStr=addText(warnStr, 'invalid hex literal: 0x..."');  %TODO: change to errStr
+                            errStr=addText(errStr, 'invalid hex literal: 0x..."');  
                         end
 
                     %string literal
@@ -784,33 +785,39 @@ for i = 1:nLines
                             end
 
                             %Get OD SUBINDEX  - literal (decimal) or variable -required
-                            subIndexStr = regexp(operandStr, '\.\w+', 'match'); %find . followed by digits
-                            
-                            if ~isempty(subIndexStr)
-                                subIndexStrHex = regexp(operandStr, '\.[0-9_a-fA-f]{1,2}', 'match'); %find . followed by digits
-                                if ~isempty(subIndexStrHex)
-                                    subIndex = sscanf(subIndexStrHex{1}, '.%2X'); %convert to string and convert from hex
-                                %non literal subIndex    
+                            subIndexStrHex = regexp(operandStr, '\.[0-9_a-fA-f]+', 'match'); %find . followed by 1 or more hex digits
+                            if ~isempty(subIndexStrHex) %literal subIndex 
+                                subIndexStrHex = subIndexStrHex{1}(2:end); %convert to string and remove .
+                                if length(subIndexStrHex)>2
+                                    errStr = addText(errStr, 'Literal subindex must be hex 0-ff/FF');
+                                    %subIndex = 255; %avoid further errors
                                 else
+                                    subIndex = hex2dec(subIndexStrHex);
+                                end
+                            else  %non literal subIndex or no subindex 
+                                subIndexStrVar = regexp(operandStr, '\.\(\w+?\)', 'match'); %find .( followed by word followed by )  Use lazy ?
+                                if ~isempty(subIndexStrVar) %variable subindex
+                                    subIndexStrVar = subIndexStrVar{1}(3:end-1); %convert to string and remove .(  )
                                     subIndex = [];
-                                    [isDefinedVarEl, iDefinedVarEl] = ismember(subIndexStr, varnames);
+                                    [isDefinedVarEl, iDefinedVarEl] = ismember(subIndexStrVar, varnames);
                                     if isDefinedVarEl
                                         if isNumericType(var(iDefinedVarEl).type) && var(iDefinedVarEl).array == 0
                                             scopeEl = scopeStr2Code(var(iDefinedVarEl).scope);
                                             typeEl = typeStr2Code(var(iDefinedVarEl).type);
                                             typemodEl = 192; %0xC0
                                         else
-                                            warnStr = addText(warnStr, 'Variable subindex must be a numeric scalar type'); %TODO: change to errStr
-                                            subIndex = 255; %avoid further errors
+                                            errStr = addText(errStr, 'Variable subindex must be a numeric scalar type'); %TODO: change to errStr
+                                            %subIndex = 255; %avoid further errors
                                         end
                                     else
-                                        warnStr = addText(warnStr, 'Subindex must be hex (0-ff/FF) or numeric scalar variable'); %TODO: change to errStr
-                                        subIndex = 255; %avoid further errors
+                                        errStr = addText(errStr, 'Variable for subindex does not exist'); %TODO: change to errStr
+                                        %subIndex = 255; %avoid further errors
                                     end
+                                else %no subindex
+                                   errStr = addText(errStr, 'OD Index must be followed by .XX in hex or .(var) where var is numeric scalar variable'); %TODO: change to errStr
+                                   %subIndex = 255; %avoid further errors
                                 end
-                            else
-                               warnStr = addText(warnStr, 'no subindex found'); %TODO: change to errStr
-                               subIndex = 255; %avoid further errors
+                            
                             end
 
                             %Get NUMBER OF SUBINDICES - optional, default 1
@@ -819,7 +826,7 @@ for i = 1:nLines
                                 nSubIndicesStr = nSubIndicesStr{1}(2:end); %convert to string and scrap '^'
                                 nSubIndices = str2double(nSubIndicesStr); 
                                 if isnan(nSubIndices) || nSubIndices > 50 && nSubIndices > 0
-                                     warnStr = addText(warnStr,['invalid number of subindices ^' nSubIndicesStr] ); %TODO: change to errStr
+                                     errStr = addText(errStr,['invalid number of subindices ^' nSubIndicesStr] ); 
                                 elseif nSubIndices > 1
                                     typemodEl = 192; %0xC0
                                     typeEl = 5;
@@ -906,12 +913,12 @@ for i = 1:nLines
                                 if ~isempty(elStr)
                                     elStr = elStr{1}(2:end-1); %convert cell to string and strip [ ] 
                                     if var(iDefinedVar).array == 0 
-                                        warnStr=addText(warnStr, 'attempting to index non-array variable');  %TODO: change to errStr
+                                        errStr=addText(errStr, 'attempting to index non-array variable');  
                                     else
                                         el = str2double(elStr);
                                         if ~isnan(el)
                                             if el > maxEl-1
-                                                warnStr=addText(warnStr, 'exceeds array bounds');  %TODO: cha %TODO: change to errStr
+                                                errStr=addText(errStr, 'exceeds array bounds');  
                                             else
                                                  %scalar literal array element
                                                 typeEl = 6;
@@ -927,7 +934,7 @@ for i = 1:nLines
                                                 [isDefinedVarEl, iDefinedVarEl] = ismember(elStr, varnames);
                                                 if isDefinedVarEl
                                                     if var(iDefinedVarEl).array >0
-                                                        warnStr=addText(warnStr, 'array variable used as array index');  %TODO: cha %TODO: change to errStr
+                                                        errStr=addText(errStr, 'array variable used as array index');  
                                                     else
                                                         %verify that variable is valid as an index (scalar
                                                         %numeric)
@@ -938,12 +945,12 @@ for i = 1:nLines
                                                             disp(['found usage of:' varnames(iDefinedVarEl) ' as array element']);
                                                             varUsage = [varUsage; iDefinedVarEl];
                                                         else
-                                                            warnStr=addText(warnStr, 'non-numeric variable used as array index');  %TODO: cha %TODO: change to errStr
+                                                            errStr=addText(errStr, 'non-numeric variable used as array index');  
                                                         end
                                                     end
 
                                                 else
-                                                     warnStr=addText(warnStr, 'undefined variable used as array index');  %TODO: cha %TODO: change to errStr
+                                                     errStr=addText(errStr, 'undefined variable used as array index');  
                                                 end
                                             end
                                         end
@@ -956,9 +963,9 @@ for i = 1:nLines
                             %undefined variable
                             else
                                 if j<=nOperands
-                                    warnStr=addText(warnStr, ['undefined variable in operand' num2str(j)]);  %TODO: cha %TODO: change to errStr
+                                    errStr=addText(errStr, ['undefined variable in operand' num2str(j)]);  
                                 else
-                                    warnStr=addText(warnStr, 'undefined variable in result');  %TODO: cha %TODO: change to errStr
+                                    errStr=addText(errStr, 'undefined variable in result');  
                                 end
                             end
                             
@@ -1042,19 +1049,26 @@ for i = 1:nLines
         end
         
         if ~isempty(ei_result)
-            formattedtext=[formattedtext '<FONT COLOR="black">']
+            formattedtext=[formattedtext '<FONT COLOR="black">'];
             strPosResult(i, 1) = length(formattedtext)+1;
             formattedtext=[formattedtext A{i}(si_result:ei_result) ];
             strPosResult(i, 2) = length(formattedtext);
+        end
+        
+        %put errors, then warnings, then comments
+        if ~isempty(errStr)
+            formattedtext=[formattedtext '<FONT COLOR="red"><small><i><u>' errStr '</i></u></small>'];
+        end
+        
+        if ~isempty(warnStr)
+            formattedtext=[formattedtext '<FONT COLOR="purple"><small><i><u>' warnStr '</i></u></small>'];
         end
         
         if ~isempty(ei_comment)
             formattedtext=[formattedtext '<FONT COLOR="green"><i>' A{i}(si_comment:ei_comment) '</i>'];
         end
         
-        if ~isempty(warnStr)
-            formattedtext=[formattedtext '<FONT COLOR="red"><small><i><u>' warnStr '</i></u></small>'];
-        end
+
         formattedtext=[formattedtext '</pre></HTML>'];
     end
     B{i} = formattedtext;
@@ -1223,7 +1237,12 @@ address=0;
 for k=1:nOps
     fprintf('\nOperation %2.0f:', k)
     copyResult = opcodelist{operation(k).index, 8};
-    [opBytes{k}, jump(k)] = assembleOperation(operation(k), var, label, copyResult);
+    try 
+        [opBytes{k}, jump(k)] = assembleOperation(operation(k), var, label, copyResult);
+    catch
+        disp(['Quitting assembly.  Could not assemble operation ' num2str(k) ', Line: ' num2str(operation(k).line)]);
+        return;
+    end
     operation(k).address = address;
     address = address + length(opBytes{k});
 end
@@ -1481,7 +1500,7 @@ function [opBytes, jumpLine] = assembleOperation(op, var, label, copyResult)
                 
                 %literal and single subindex 
                 else 
-                    operand.bytes = [8, operand.typeScope, port,netId,node,odIndexBytes,subIndex]; % TODO: correct
+                    operand.bytes = [8, operand.typeScope, port,netId,node,odIndexBytes,subIndex]; 
                 end
             end 
                 
