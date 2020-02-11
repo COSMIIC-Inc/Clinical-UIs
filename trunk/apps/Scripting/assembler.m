@@ -229,6 +229,7 @@ i_def = length(def);
 
 strPosOperand = nan(nLines, 2);
 strPosResult = nan(nLines, 2);
+strPosComment = nan(nLines);
 
 label = {};
 i_label = 0;
@@ -1094,10 +1095,10 @@ for i = 1:nLines
             formattedtext=[formattedtext '<FONT COLOR="purple"><small><i><u>' warnStr '</i></u></small>'];
         end
         
-        if ~isempty(ei_comment)
+        strPosComment(i)= length(formattedtext)+1;
+        if ~isempty(ei_comment)    
             formattedtext=[formattedtext '<FONT COLOR="green"><i>' A{i}(si_comment:ei_comment) '</i>'];
         end
-        
 
         formattedtext=[formattedtext '</pre></HTML>'];
     end
@@ -1174,6 +1175,7 @@ varOrder = unique(varUsage, 'stable');
 
 
 for j = 1:length(varOrder)
+    warnStr = [];
     k = varOrder(j);
     if isNumericType(var(k).type)
 
@@ -1225,6 +1227,8 @@ for j = 1:length(varOrder)
             if strLen <= 0
                 warnStr=addText(warnStr, 'zero length string'); 
                 var(k).init = [];
+            elseif strLen > 50
+                warnStr=addText(warnStr, 'string cannot be longer than 50 characters'); 
             else
                 var(k).init = var(k).initStr(2:end-1);
             end
@@ -1242,6 +1246,15 @@ for j = 1:length(varOrder)
         end
         varBytes = uint8(var(k).init);
     end
+    
+    %add variable table warnings to warnings
+    if ~isempty(warnStr)
+        formattedtext=['<FONT COLOR="purple"><small><i><u>' warnStr '</i></u></small>'];
+        line = var(k).line;
+        str = hLB.String{line};
+        hLB.String{line} = [str(1:strPosComment(line)-1), formattedtext, str(strPosComment(line):end)];
+    end
+
 
     switch var(k).scope 
         case 'stack'
@@ -1389,8 +1402,8 @@ if debugger
     bRunToLine.Enable = 'off';
     buttons = [bSingleStep bRunToLine];
     cbDebugEnable.Callback = {@debugEnable, hLB, operation, nnp, scriptP, buttons, scripterrors};
-    bSingleStep.Callback = {@debugSingleStep, hLB, nnp, operation, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable, scripterrors};
-    bRunToLine.Callback = {@debugRunToLine, hLB, nnp, operation, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable, scripterrors}; 
+    bSingleStep.Callback = {@debugSingleStep, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable, scripterrors};
+    bRunToLine.Callback = {@debugRunToLine, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable, scripterrors}; 
     bDownload.Callback = {@downloadScript};
 end
 eFontSize.Callback = {@fontSizeChanged, hLB};
@@ -1721,7 +1734,7 @@ function debugEnable(src, event, hLB, operation, nnp, sp, buttons, scripterrors)
 end
 
 
-function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox, scripterrors)
+function debugSingleStep(src, event, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox, scripterrors)
 
     
     %Need to make sure that the NMT command is not retried automatically if it does not get response
@@ -1807,18 +1820,27 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
 
                     [si_op, ei_op] = regexp(operandStr, '\s*((".*?")|(<.*?>)|(\[.*?\])|(!.*?!)|\S+)\s+');
                     for j=1:length(ei_op)
+                        iVar = operation(i).operand(j).iVar;
+                        varCast = [];
+                        if ~isempty(iVar) 
+                            type = var(iVar).type;
+                            if isNumericType(type)
+                                varCast = typecast(uint32(resp(j+1)), type);
+                                varCast = varCast(1);
+                            end
+                        end
                         if isempty(operation(i).operand(j).literal)
                             if resp(j+1) >= baseRAM %may be pointer to RAM rather than value
                                 switch isPointer(operation(i).operand(j))
                                     case 0 %not a pointer
-                                        newStr = sprintf(' (%d) ', resp(j+1));
+                                        newStr = sprintf(' (0x%X=%d) ', resp(j+1), varCast);
                                     case 1 %must be a pointer
                                         newStr = sprintf(' (*%d) ', resp(j+1)-baseRAM);
                                     case 2 %may be a pointer (not sure with network operands)
-                                        newStr = sprintf(' (%d OR *%d) ', resp(j+1), resp(j+1)-baseRAM);
+                                        newStr = sprintf(' (0x%X=%d OR *%d) ', resp(j+1), varCast, resp(j+1)-baseRAM);
                                 end
                             else %not a pointer
-                                newStr = sprintf(' (%d) ', resp(j+1));
+                                newStr = sprintf(' (0x%X=%d) ', resp(j+1), varCast);
                             end
                             
                             operandStr = [operandStr(1:ei_op(j)+offset), newStr, operandStr(ei_op(j)+offset+1:end)];
@@ -1830,17 +1852,26 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
                 if ~isnan(si_result)
                     if operation(i).result.literal==0 %not a jump type
                         resultStr = str((si_result:ei_result)+offset);
+                        iVar = operation(i).result.iVar;
+                        varCast = [];
+                        if ~isempty(iVar)
+                            type = var(iVar).type;
+                            if isNumericType(type)
+                                varCast = typecast(uint32(resp(7)), type);
+                                varCast = varCast(1);
+                            end
+                        end
                         if resp(7) >= baseRAM %may be pointer to RAM rather than value
                             switch isPointer(operation(i).result)
                                 case 0 %not a pointer
-                                    newStr = sprintf(' (%d) ', resp(7));
+                                    newStr = sprintf(' (0x%X=%d) ', resp(7), varCast);
                                 case 1 %must be a pointer
                                     newStr = sprintf(' (*%d) ', resp(7)-baseRAM);
                                 case 2 %may be a pointer (not sure with network operands)
-                                    newStr = sprintf(' (%d OR *%d) ', resp(7), resp(7)-baseRAM);
+                                    newStr = sprintf(' (0x%X=%d OR *%d) ', resp(7), varCast, resp(7)-baseRAM);
                             end
                         else %not a pointer
-                             newStr = sprintf(' (%d) ', resp(7));
+                             newStr = sprintf(' (0x%X=%d) ', resp(7),varCast);
                         end
                         resultStr = [resultStr, newStr];
                         str = [str(1:si_result+offset-1), resultStr, str(ei_result+offset+1:end)];
@@ -1960,14 +1991,14 @@ function debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, 
 %     end
 end
 
-function debugRunToLine(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox, scripterrors)
+function debugRunToLine(src, event, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox, scripterrors)
     disp('Run to Line')
     line = hLB.Value;
-    debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox , scripterrors)
+    debugSingleStep(src, event, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox , scripterrors)
     h = msgbox('May run indefinitely - Hit OK to Cancel');
     while hLB.Value~= line && isgraphics(h)
         drawnow
-        debugSingleStep(src, event, hLB, nnp, operation, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox, scripterrors)
+        debugSingleStep(src, event, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox, scripterrors)
         if hLB.Value == length(hLB.String)
             break;
         end
