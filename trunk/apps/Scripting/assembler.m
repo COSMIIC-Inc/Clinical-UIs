@@ -813,7 +813,7 @@ for i = 1:nLines
                                 error('should not get here, because expression already matched')
                             end
 
-                            %Get OD SUBINDEX  - literal (decimal) or variable -required
+                            %Get OD SUBINDEX  - literal (hex) or variable -required
                             subIndexStrHex = regexp(operandStr, '\.[0-9_a-fA-f]+', 'match'); %find . followed by 1 or more hex digits
                             if ~isempty(subIndexStrHex) %literal subIndex 
                                 subIndexStrHex = subIndexStrHex{1}(2:end); %convert to string and remove .
@@ -861,7 +861,6 @@ for i = 1:nLines
                                 elseif nSubIndices > 1
                                     typemodEl = 192; %0xC0
                                     typeEl = 5;
-                                    scopeEl = 0; %literal
                                 end
                             end
                             
@@ -1193,7 +1192,7 @@ for j = 1:length(varOrder)
                     else
                         var(k).init(1:length(init)) = init;
                         if length(init)<var(k).array
-                            warnStr=addText(warnStr, 'setting some uninitialized elemnts to zero'); 
+                            warnStr=addText(warnStr, 'setting some uninitialized elements to zero'); 
                         end
                     end
                 end  
@@ -1207,8 +1206,13 @@ for j = 1:length(varOrder)
         else
             var(k).init = str2double(var(k).initStr);
             if isnan(var(k).init)
-                warnStr=addText(warnStr, 'invalid variable initializer, initializing to zero'); 
-                var(k).init = 0;
+                initHex = sscanf(var(k).initStr, '0x%X');
+                if length(initHex)==1
+                    var(k).init = initHex;
+                else
+                    warnStr=addText(warnStr, 'invalid variable initializer, initializing to zero'); 
+                    var(k).init = 0;
+                end   
             end
         end
         varBytes = typecast(cast(var(k).init, var(k).type), 'uint8');
@@ -1267,13 +1271,53 @@ for j = 1:length(varOrder)
             var(k).pointer = length(globaltable);
             globaltable = [globaltable varBytes];                    
     end
-
-
+    
 end
+
+
+%% Create debug files
+status = mkdir('debug');
+if status ==1
+    fidOperations = fopen('debug/operations.txt', 'w');
+    fidVarTables = fopen('debug/variables.txt', 'w');
+    fidOpCodeList = fopen('debug/opcodelist.txt', 'w');
+    fidDownload  = fopen('debug/donwloadImage.txt', 'w');
+end
+%%
+
+fprintf(fidVarTables, '------- Stack Table ----------------\n');
+for j=1:length(varOrder)
+    k=varOrder(j);
+    if isequal(var(k).scope, 'stack')
+        fprintf(fidVarTables, '\n%d: %s (line %d)', var(k).pointer, var(k).name, var(k).line);
+    end
+end
+fprintf(fidVarTables, '\n\n------- Global Table ----------------\n');
+for j=1:length(varOrder)
+    k=varOrder(j);
+    if isequal(var(k).scope, 'global')
+        fprintf(fidVarTables, '\n%d: %s (line %d)', var(k).pointer, var(k).name, var(k).line);
+    end
+end
+fprintf(fidVarTables, '\n\n------- Constants Table ----------------\n');
+for j=1:length(varOrder)
+    k=varOrder(j);
+    if isequal(var(k).scope, 'const')
+        fprintf(fidVarTables, '\n%d: %s (line %d)', var(k).pointer, var(k).name, var(k).line);
+    end
+end
+
+%% Operation lines
+for op=1:length(operation)
+    fprintf(fidOperations,'%d: %s(line %d)\n', op,  operation(op).opCodeName, operation(op).line);
+end
+%% 
+
 % ------------  end generate variable tables  -------------%
 
 if ~isempty(errStr)
     msgbox('Quitting assembly - fix errors and try again' );
+    disp('Quitting assembly - fix errors and try again' ); %TODO: remove
     return;
 end
 
@@ -1283,12 +1327,13 @@ jump = zeros(nOps,1);
 opBytes = cell(nOps,1);
 address=0;
 for k=1:nOps
-    fprintf('\nOperation %2.0f:', k)
+    %fprintf('\nOperation %2.0f:', k)
     copyResult = opcodelist{operation(k).index, 8};
     try 
         [opBytes{k}, jump(k)] = assembleOperation(operation(k), var, label, copyResult);
     catch
         msgbox(['Quitting assembly.  Could not assemble operation ' num2str(k) ', Line: ' num2str(operation(k).line)]);
+        disp(['Quitting assembly.  Could not assemble operation ' num2str(k) ', Line: ' num2str(operation(k).line)]);
         return;
     end
     operation(k).address = address;
@@ -1345,14 +1390,14 @@ end
 %build script body and output opcode list in same format as CE for comparison
 scriptbody = [];
 
-fprintf('\n\n\n--------------------------------------------------------------\n\n\n');
-fprintf('\nOpcode list...');
+
+fprintf(fidOpCodeList, 'Opcode list...');
 for k = 1: length(opBytes)
-    fprintf('\n');
-    fprintf('%02X ', opBytes{k});
+    fprintf(fidOpCodeList,'\n');
+    fprintf(fidOpCodeList,'%02X ', opBytes{k});
     scriptbody = [scriptbody opBytes{k}];
 end
-fprintf('\n\n\n')
+
 
 H = 10; %header length
 B = length(scriptbody);
@@ -1386,13 +1431,13 @@ header = [dBytes, gPointerBytes, sPointerBytes, cPointerBytes, ePointerBytes];
 download = [header, scriptbody, globaltable, stacktable, consttable, scriptID];  
 
 %output download bytes list in same format as CE for comparison
-fprintf('\n\n\n--------------------------------------------------------------\n\n\n');
-fprintf('\nDownload image...');
+
+fprintf(fidDownload, 'Download image...');
 for i=1:16:length(download)
     ei = min(i+16-1, length(download));
-    fprintf('\n%04X:   %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X ', i-1, download(i:ei));
+    fprintf(fidDownload, '\n%04X:   %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X ', i-1, download(i:ei));
 end
-fprintf('\n\n\n')
+
  % ------------- end generate download bytes ------------%
 
 
@@ -1457,12 +1502,41 @@ function code = typeStr2Code(str)
             code = 7;
         case 'string'
             code = 8;
-        case 'bytearray'
+        case 'ba'
             code = 10;
         case 'fixp'
             code = 11;
         otherwise 
             code = [];
+    end
+end
+
+function str = typeCode2Str(code)
+    switch code
+        case 0
+            str = 'null';
+        case 1
+            str = 'boolean'; 
+        case 2
+            str = 'int8'; 
+        case 3
+            str = 'int16';
+        case 4
+            str = 'int32';
+        case 5
+            str = 'uint8'; 
+        case 6
+            str='int32';
+        case 7
+            str='uint32';
+        case 8
+            str = 'string';
+        case 10
+            str = 'ba';
+        case 11
+            str = 'fixp';
+        otherwise 
+            str = [];
     end
 end
 
@@ -1488,7 +1562,7 @@ function result = isPointer(operand)
             result = 2;
         else
             type = bitand(operand.typeScope, 15);
-            if ismember(type, [0:7 11]) %scalar numeric type
+            if isNumericType(typeCode2Str(type)) %scalar numeric type
                 result = 0;
             else %string or bytearray
                 result = 1;
@@ -1681,6 +1755,7 @@ function debugEnable(src, event, hLB, operation, nnp, sp, buttons, scripterrors)
                 if status > 0
                     if status ==19 %TODO: fix this when PM script errors are corrected
                         msgbox('May not have enabled script debugging ')
+                        disp('May not have enabled script debugging ') %TODO: remove
                     end
 %                     if status < length(scripterrors)
 %                         msgbox(['Runtime Error: ' scripterrors{status+1}])
@@ -1691,6 +1766,7 @@ function debugEnable(src, event, hLB, operation, nnp, sp, buttons, scripterrors)
             else
                 if ~confirmNMT
                     msgbox('Could not confirm NMT')
+                    disp('Could not confirm NMT') %TODO: remove
                 end
             end
             if ~isempty(operation)
@@ -1701,6 +1777,7 @@ function debugEnable(src, event, hLB, operation, nnp, sp, buttons, scripterrors)
             end
         else
             msgbox('invalid script download location')
+            disp('invalid script download location') %TODO: remove
         end
     else
         hLB.String = hLB.UserData;
@@ -1719,12 +1796,14 @@ function debugEnable(src, event, hLB, operation, nnp, sp, buttons, scripterrors)
             if status > 0
                 if status ==19 %TODO: fix this when PM script errors are corrected
                     msgbox('May not have enabled script debugging ')
+                    disp('May not have enabled script debugging ') %TODO remove
                 end
                 %msgbox(['Error: ' num2str(status)])
             end
         else
             if ~confirmNMT
                 msgbox('Could not confirm NMT')
+                disp('Could not confirm NMT') %TODO remove
             end
         end
         for b=1:length(buttons)
@@ -1777,8 +1856,10 @@ function debugSingleStep(src, event, hLB, nnp, operation, var, label, strPosOper
     if status > 0
         if status < length(scripterrors)
             msgbox(['Runtime Error: ',  scripterrors{status+1}])
+            disp(['Runtime Error: ',  scripterrors{status+1}]) %TODO remove
         else
             msgbox(['Unknown Runtime Error: ', num2str(status)])
+            disp(['Unknown Runtime Error: ', num2str(status)]) %TODO remove
         end
         %disable further debugging
         checkbox.Value = false;
@@ -1820,15 +1901,20 @@ function debugSingleStep(src, event, hLB, nnp, operation, var, label, strPosOper
 
                     [si_op, ei_op] = regexp(operandStr, '\s*((".*?")|(<.*?>)|(\[.*?\])|(!.*?!)|\S+)\s+');
                     for j=1:length(ei_op)
-                        iVar = operation(i).operand(j).iVar;
-                        varCast = [];
-                        if ~isempty(iVar) 
-                            type = var(iVar).type;
-                            if isNumericType(type)
-                                varCast = typecast(uint32(resp(j+1)), type);
-                                varCast = varCast(1);
-                            end
+                        typeStr = typeCode2Str(bitand(operation(i).operand(j).typeScope, 15));
+                        if isNumericType(typeStr)
+                            varCast = typecast(uint32(resp(j+1)), typeStr);
+                            varCast = varCast(1);
                         end
+%                         iVar = operation(i).operand(j).iVar;
+%                         varCast = [];
+%                         if ~isempty(iVar) 
+%                             type = var(iVar).type;
+%                             if isNumericType(type)
+%                                 varCast = typecast(uint32(resp(j+1)), type);
+%                                 varCast = varCast(1);
+%                             end                           
+%                         end
                         if isempty(operation(i).operand(j).literal)
                             if resp(j+1) >= baseRAM %may be pointer to RAM rather than value
                                 switch isPointer(operation(i).operand(j))
@@ -1852,15 +1938,20 @@ function debugSingleStep(src, event, hLB, nnp, operation, var, label, strPosOper
                 if ~isnan(si_result)
                     if operation(i).result.literal==0 %not a jump type
                         resultStr = str((si_result:ei_result)+offset);
-                        iVar = operation(i).result.iVar;
-                        varCast = [];
-                        if ~isempty(iVar)
-                            type = var(iVar).type;
-                            if isNumericType(type)
-                                varCast = typecast(uint32(resp(7)), type);
-                                varCast = varCast(1);
-                            end
+                        typeStr = typeCode2Str(bitand(operation(i).result.typeScope, 15));
+                        if isNumericType(typeStr)
+                            varCast = typecast(uint32(resp(7)), typeStr);
+                            varCast = varCast(1);
                         end
+%                         iVar = operation(i).result.iVar;
+%                         varCast = [];
+%                         if ~isempty(iVar)
+%                             type = var(iVar).type;
+%                             if isNumericType(type)
+%                                 varCast = typecast(uint32(resp(7)), type);
+%                                 varCast = varCast(1);
+%                             end
+%                         end
                         if resp(7) >= baseRAM %may be pointer to RAM rather than value
                             switch isPointer(operation(i).result)
                                 case 0 %not a pointer
