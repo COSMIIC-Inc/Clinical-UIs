@@ -25,6 +25,17 @@ if nargin<6
     end
 end
 
+%% Create debug folder and files
+if ~isfolder('debug')
+    mkdir('debug');
+end
+
+fidOperations = fopen('debug/operations.txt', 'w');
+fidVarTables = fopen('debug/variables.txt', 'w');
+fidOpCodeList = fopen('debug/opcodelist.txt', 'w');
+fidDownload  = fopen('debug/downloadImage.txt', 'w');
+fidLines = fopen('debug/lines.txt', 'w');
+
 fid = fopen(file, 'r');
 if fid == -1
     error('Could not open nnps script file for reading')
@@ -237,7 +248,7 @@ i_label = 0;
 varUsage = [];
 
 for i = 1:nLines
-    fprintf('\nLine %3.0f: ', i)
+    fprintf(fidLines, '\nLine %3.0f: ', i);
     nOperands = 0;
     nResult = 0;
     errStr = [];
@@ -758,7 +769,7 @@ for i = 1:nLines
                                 %replace those strings with their definition
                                 for d=find(isDefine)
                                     operandSplitStr{d} = def(iDefine(d)).replace;
-                                    fprintf('replaced "%s" with "%s"\n', def(iDefine(d)).name, def(iDefine(d)).replace);
+                                    fprintf(fidLines, '\n  replaced "%s" with "%s"', def(iDefine(d)).name, def(iDefine(d)).replace);
                                 end
 
                                 %put the operand string back together
@@ -831,7 +842,7 @@ for i = 1:nLines
                                     [isDefinedVarEl, iDefinedVarEl] = ismember(subIndexStrVar, varnames);
                                     if isDefinedVarEl
                                         if isNumericType(var(iDefinedVarEl).type) && var(iDefinedVarEl).array == 0
-                                            disp(['found usage of:' varnames{iDefinedVarEl} ' as variable subindex']);
+                                            fprintf(fidLines, '\n  found usage of "%s" as variable subindex' , varnames{iDefinedVarEl});
                                             varUsage = [varUsage; iDefinedVarEl];
                                             scopeEl = scopeStr2Code(var(iDefinedVarEl).scope);
                                             typeEl = typeStr2Code(var(iDefinedVarEl).type);
@@ -902,9 +913,9 @@ for i = 1:nLines
                                    warnStr = addText(warnStr, 'invalid port/netID specifier, ignoring'); 
                                 end
                             else
-                                disp('using default port/netID')
+                                fprintf(fidLines, '\n   (using default port/netID)');
                             end
-                            fprintf('\nfound Network, node %2.0f, port %2.0f, netID %2.0f, odIndex %4X.%2.0f (%2.0f)', node, port, netID, odIndex, subIndex, nSubIndices);
+                            fprintf(fidLines, '\n  found Network, node %2.0f, port %2.0f, netID %2.0f, odIndex %4X.%2.0f (%2.0f)', node, port, netID, odIndex, subIndex, nSubIndices);
                             network = struct('node', node, 'port', port, 'netID', netID, 'odIndex', odIndex, 'subIndex', subIndex, 'nSubIndices', nSubIndices);
 
                         %non-literal (array and scalar)
@@ -972,7 +983,7 @@ for i = 1:nLines
                                                         if isNumericType(typeElStr)
                                                             typeEl = typeStr2Code(typeElStr);
                                                             scopeEl = scopeStr2Code(var(iDefinedVarEl).scope);
-                                                            disp(['found usage of:' varnames(iDefinedVarEl) ' as array element']);
+                                                            fprintf(fidLines, '\n  found usage of "%s" as array element',  varnames{iDefinedVarEl});
                                                             varUsage = [varUsage; iDefinedVarEl];
                                                         else
                                                             errStr=addText(errStr, 'non-numeric variable used as array index');  
@@ -987,10 +998,9 @@ for i = 1:nLines
                                     end
 
                                 end
-                                disp(['found usage of:' varnames{iDefinedVar}]);
+                                fprintf(fidLines, '\n  found usage of "%s"', varnames{iDefinedVar});
                                 varUsage = [varUsage; iDefinedVar];
-                                el = typecast(uint16(el), 'uint8');
-                            %undefined variable
+                                el = typecast(uint16(el), 'uint8');                             %undefined variable
                             else
                                 if j<=nOperands
                                     errStr=addText(errStr, ['undefined variable in operand' num2str(j)]);  
@@ -1275,14 +1285,7 @@ for j = 1:length(varOrder)
 end
 
 
-%% Create debug files
-status = mkdir('debug');
-if status ==1
-    fidOperations = fopen('debug/operations.txt', 'w');
-    fidVarTables = fopen('debug/variables.txt', 'w');
-    fidOpCodeList = fopen('debug/opcodelist.txt', 'w');
-    fidDownload  = fopen('debug/donwloadImage.txt', 'w');
-end
+
 %%
 
 fprintf(fidVarTables, '------- Stack Table ----------------\n');
@@ -1438,6 +1441,13 @@ for i=1:16:length(download)
     fprintf(fidDownload, '\n%04X:   %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X ', i-1, download(i:ei));
 end
 
+disp('Finished Assembly')
+
+fclose(fidOperations);
+fclose(fidVarTables);
+fclose(fidOpCodeList);
+fclose(fidDownload);
+fclose(fidLines);
  % ------------- end generate download bytes ------------%
 
 
