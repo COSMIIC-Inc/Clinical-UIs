@@ -41,7 +41,7 @@ if resp ~= hex2dec('97')
     disp('Error stopping RTC');
     return;
 end
-pause(.2); % added pause to make sure clock stops
+pause(.4); % added pause to make sure clock stops
 % Write the data
 resp=nnp.write(7,'2004',1,pmDate,'uint32');
 if ~isequal(resp, 0)
