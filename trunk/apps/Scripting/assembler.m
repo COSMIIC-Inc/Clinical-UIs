@@ -158,7 +158,7 @@ opcodelist = { ...
     'MAVG',101,2,2, 'Moving Average - Source, Array[] -> Result',1,0,0;
     'IIR',102,2,2, 'IIR - Source, Array -> Result',1,0,0;
     'FIFO',104,1,1, 'FirstIn-FirstOut buffer.  Buf[i] = Buf[i-1], Buf[0]=NewValue -> Buf',1,0,0;
-    'VECMOV',105,4,4, 'Vector Move - SourceArray, Source Starting Index, Dest Staring Index, Number of Indices -> DestArray',1,0,0;
+    'VECMOV',105,4,4, 'Vector Move - SourceArray, Source Starting Index, Dest Starting Index, Number of Indices -> DestArray',1,0,0;
     'VECMAX',106,1,1, 'Vector->Vector Maximum',1,0,0;
     'VECMAXI',107,1,1, 'Vector->Index of Vector Maximum',1,0,0;
     'VECMIN',108,1,1, 'Vector->Vector Minimum',1,0,0;
@@ -229,7 +229,7 @@ nLines = length(A)-1;
 B = cell(nLines,1);
 operation = struct('index',[],'line', [],'opCodeName','','opCodeByte','','operand', [], 'result',[], 'address', []);
 i_op = 0;
-var = struct('name','','line', [],'type','','scope','', 'initStr', '', 'init', [], 'array', [], 'pointer',[]);
+var = struct('name','','line', [],'type','','scope','', 'initStr', '', 'init', [], 'array', [], 'pointer',[],'endpointer',[]);
 i_var = 0;
 
 def = struct('name','','line',[],'replace','');
@@ -456,7 +456,7 @@ for i = 1:nLines
                         else
                             var(i_var).name = opStr(1:iArray-1);
                             nEl = str2double(opStr(iArray+1:end-1));
-                            if isnan(nEl) || length(nEl) ~=1
+                            if isnan(nEl) || length(nEl) ~=1 || ~isreal(nEl)
                                  warnStr=addText(warnStr,'invalid number of elements' ); %todo change to errStr
                             else
                                 var(i_var).array = nEl;
@@ -498,7 +498,7 @@ for i = 1:nLines
                         else
                             var(i_var).name = opStr(1:iArray-1);
                             nEl = str2double(opStr(iArray+1:end-1));
-                            if isnan(nEl) || length(nEl) ~=1
+                            if isnan(nEl) || length(nEl) ~=1 || ~isreal(nEl)
                                  errStr=addText(errStr,'invalid number of elements' ); 
                             else
                                 var(i_var).array = nEl;
@@ -698,7 +698,7 @@ for i = 1:nLines
                     loop = false;
                     operand = str2double(operandStr);
                     %Literals
-                    if ~isnan(operand) %numeric decimal literal (scalar)
+                    if ~isnan(operand) && isreal(operand) %numeric decimal literal (scalar)
                         scope = 0;
                         if operand<0
                             type = 4;
@@ -808,7 +808,7 @@ for i = 1:nLines
                             if ~isempty(nodeStr)
                                 nodeStr = nodeStr{1}(2:end); %convert to string  and scrap leading N 
                                 node = str2double(nodeStr); 
-                                if isnan(node) || node>15
+                                if isnan(node) || node>15 ||~isreal(node)
                                     warnStr = addText(warnStr, 'node should be 15 or lower'); 
                                 end
                             else
@@ -867,7 +867,7 @@ for i = 1:nLines
                             if ~isempty(nSubIndicesStr)
                                 nSubIndicesStr = nSubIndicesStr{1}(2:end); %convert to string and scrap '^'
                                 nSubIndices = str2double(nSubIndicesStr); 
-                                if isnan(nSubIndices) || nSubIndices > 50 && nSubIndices > 0
+                                if isnan(nSubIndices) || ~isreal(nSubIndices) || nSubIndices > 50 && nSubIndices > 0
                                      errStr = addText(errStr,['invalid number of subindices ^' nSubIndicesStr] ); 
                                 elseif nSubIndices > 1
                                     typemodEl = 192; %0xC0
@@ -957,7 +957,7 @@ for i = 1:nLines
                                         errStr=addText(errStr, 'attempting to index non-array variable');  
                                     else
                                         el = str2double(elStr);
-                                        if ~isnan(el)
+                                        if ~isnan(el) && isreal(el)
                                             if el > maxEl-1
                                                 errStr=addText(errStr, 'exceeds array bounds');  
                                             else
@@ -1215,7 +1215,7 @@ for j = 1:length(varOrder)
         %non-array (initialized)     
         else
             var(k).init = str2double(var(k).initStr);
-            if isnan(var(k).init)
+            if isnan(var(k).init) || ~isreal(var(k).init)
                 initHex = sscanf(var(k).initStr, '0x%X');
                 if length(initHex)==1
                     var(k).init = initHex;
@@ -1230,11 +1230,11 @@ for j = 1:length(varOrder)
     elseif isequal(var(k).type, 'string')
         if var(k).initStr(1)=='#'
             strLen = str2double(var(k).initStr(2:end));
-            if isnan(strLen) || strLen < 1 || strLen > 50
+            if isnan(strLen) || ~isreal(strLen) || strLen < 1 || strLen > 50
                 warnStr=addText(warnStr, 'string length initializer should be 1-50'); 
                 var(k).init = [];
             else
-                var(k).init = zeros(1, strLen); %all null
+                var(k).init = char(zeros(1, strLen)); %all null
             end
         else
             strLen = length(var(k).initStr)-2;
@@ -1274,12 +1274,15 @@ for j = 1:length(varOrder)
         case 'stack'
             var(k).pointer = length(stacktable);
             stacktable = [stacktable varBytes]; 
+            var(k).endpointer = length(stacktable)-1;
         case 'const'
             var(k).pointer = length(consttable);
             consttable = [consttable varBytes];
+            var(k).endpointer = length(consttable)-1;
         case 'global'
             var(k).pointer = length(globaltable);
-            globaltable = [globaltable varBytes];                    
+            globaltable = [globaltable varBytes];  
+            var(k).endpointer = length(globaltable)-1;
     end
     
 end
@@ -1288,25 +1291,25 @@ end
 
 %%
 
-fprintf(fidVarTables, '------- Stack Table ----------------\n');
+fprintf(fidVarTables, '------- Stack Table (%d bytes)----------------\n', length(stacktable));
 for j=1:length(varOrder)
     k=varOrder(j);
     if isequal(var(k).scope, 'stack')
-        fprintf(fidVarTables, '\n%d: %s (line %d)', var(k).pointer, var(k).name, var(k).line);
+        fprintf(fidVarTables, '\n%3d-%3d: %s (line %d)', var(k).pointer, var(k).endpointer, var(k).name, var(k).line);
     end
 end
-fprintf(fidVarTables, '\n\n------- Global Table ----------------\n');
+fprintf(fidVarTables, '\n\n------- Global Table (%d bytes)----------------\n', length(globaltable));
 for j=1:length(varOrder)
     k=varOrder(j);
     if isequal(var(k).scope, 'global')
-        fprintf(fidVarTables, '\n%d: %s (line %d)', var(k).pointer, var(k).name, var(k).line);
+        fprintf(fidVarTables, '\n%3d-%3d: %s (line %d)', var(k).pointer, var(k).endpointer, var(k).name, var(k).line);
     end
 end
-fprintf(fidVarTables, '\n\n------- Constants Table ----------------\n');
+fprintf(fidVarTables, '\n\n------- Constants Table (%d bytes)----------------\n',  length(consttable));
 for j=1:length(varOrder)
     k=varOrder(j);
     if isequal(var(k).scope, 'const')
-        fprintf(fidVarTables, '\n%d: %s (line %d)', var(k).pointer, var(k).name, var(k).line);
+        fprintf(fidVarTables, '\n%3d-%3d: %s (line %d)', var(k).pointer, var(k).endpointer, var(k).name, var(k).line);
     end
 end
 
@@ -1415,8 +1418,8 @@ gPointerBytes = typecast(uint16(H+B),'uint8');
 sPointerBytes = typecast(uint16(H+B+G),'uint8');
 cPointerBytes = typecast(uint16(H+B+G+S),'uint8');
 ePointerBytes = typecast(uint16(H+B+G+S+C),'uint8');
-%add header and variable tables
-%Header
+% add header and variable tables
+% Header
 % start   |#bytes|description
 %       0 | 2    | script download size (D)
 %       2 | 2    | pointer to Global Var Table
@@ -1426,7 +1429,7 @@ ePointerBytes = typecast(uint16(H+B+G+S+C),'uint8');
 %      10 | B    | Script Body
 %    10+B | G    | global var bytes
 %  10+B+G | S    | stack var bytes
-%10+B+G+S | C    | const var bytes
+% 10+B+G+S | C    | const var bytes
 %      D-1| 1    | script ID
 
 %scriptID = str2double(inputdlg('scriptID'))
@@ -1456,10 +1459,16 @@ if debugger
     bSingleStep.Enable = 'off';
     bRunToLine.Enable = 'off';
     buttons = [bSingleStep bRunToLine];
+    
+    stackMonitor = variablemonitor(nnp, 'stack', var); 
+    globalMonitor = variablemonitor(nnp, 'global', var);
+    
     cbDebugEnable.Callback = {@debugEnable, hLB, operation, nnp, scriptP, buttons, scripterrors};
-    bSingleStep.Callback = {@debugSingleStep, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable, scripterrors};
-    bRunToLine.Callback = {@debugRunToLine, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable, scripterrors}; 
+    bSingleStep.Callback = {@debugSingleStep, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable, scripterrors, stackMonitor, globalMonitor};
+    bRunToLine.Callback = {@debugRunToLine, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opcodelist, scriptP, buttons, cbDebugEnable, scripterrors, stackMonitor, globalMonitor}; 
     bDownload.Callback = {@downloadScript};
+    
+
 end
 eFontSize.Callback = {@fontSizeChanged, hLB};
 
@@ -1823,7 +1832,7 @@ function debugEnable(src, event, hLB, operation, nnp, sp, buttons, scripterrors)
 end
 
 
-function debugSingleStep(src, event, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox, scripterrors)
+function debugSingleStep(src, event, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox, scripterrors, stackMonitor, globalMonitor)
 
     
     %Need to make sure that the NMT command is not retried automatically if it does not get response
@@ -1989,24 +1998,27 @@ function debugSingleStep(src, event, hLB, nnp, operation, var, label, strPosOper
         i = [];
         fprintf('\nerror reading Operand Values\n')
     end
-    resp = nnp.read(7, '1f52', 13, 'uint8'); %read first 32 stack variable bytes
-    if length(resp) == 32
-        fprintf('\n Stack:');
-        fprintf('%02X ', resp);
-        fprintf('\n');
-    else
-        %error
-        fprintf('\nerror reading Stack Bytes\n')
-    end
-    resp = nnp.read(7, '1f52', 14, 'uint8'); %read first 32 stack variable bytes
-    if length(resp) == 32
-        fprintf('\n Globals:');
-        fprintf('%02X ', resp);
-        fprintf('\n');
-    else
-        %error
-        fprintf('\nerror reading Global Bytes\n')
-    end
+    
+    stackMonitor.populateTable();
+    globalMonitor.populateTable();
+%     resp = nnp.read(7, '1f52', 13, 'uint8'); %read first 32 stack variable bytes
+%     if length(resp) == 32
+%         fprintf('\n Stack:');
+%         fprintf('%02X ', resp);
+%         fprintf('\n');
+%     else
+%         %error
+%         fprintf('\nerror reading Stack Bytes\n')
+%     end
+%     resp = nnp.read(7, '1f52', 14, 'uint8'); %read first 32 stack variable bytes
+%     if length(resp) == 32
+%         fprintf('\n Globals:');
+%         fprintf('%02X ', resp);
+%         fprintf('\n');
+%     else
+%         %error
+%         fprintf('\nerror reading Global Bytes\n')
+%     end
     resp = nnp.read(7, '1f52', 15, 'uint8'); %read 10 variable table info table
     if length(resp) == 10
         fprintf('\n VarTableInfo:');
@@ -2092,14 +2104,14 @@ function debugSingleStep(src, event, hLB, nnp, operation, var, label, strPosOper
 %     end
 end
 
-function debugRunToLine(src, event, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox, scripterrors)
+function debugRunToLine(src, event, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox, scripterrors, stackMonitor, globalMonitor)
     disp('Run to Line')
     line = hLB.Value;
-    debugSingleStep(src, event, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox , scripterrors)
+    debugSingleStep(src, event, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox , scripterrors, stackMonitor, globalMonitor)
     h = msgbox('May run indefinitely - Hit OK to Cancel');
     while hLB.Value~= line && isgraphics(h)
         drawnow
-        debugSingleStep(src, event, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox, scripterrors)
+        debugSingleStep(src, event, hLB, nnp, operation, var, label, strPosOperand, strPosResult, opCodeList, sp, buttons, checkbox, scripterrors, stackMonitor, globalMonitor)
         if hLB.Value == length(hLB.String)
             break;
         end
