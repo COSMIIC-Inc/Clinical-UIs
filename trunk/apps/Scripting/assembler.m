@@ -233,8 +233,8 @@ var = struct('name','','line', [],'type','','scope','', 'initStr', '', 'init', [
 i_var = 0;
 
 def = struct('name','','line',[],'replace','');
-def(1).name = 'log';     def(1).replace = 'N7<L,0>:A000.1'; %log without timestamp
-def(2).name = 'timelog'; def(2).replace = 'N7<L,1>:A000.1'; %log with timestamp
+def(1).name = 'log';     def(1).replace = 'N<L,0>7:A000.1'; %log without timestamp
+def(2).name = 'timelog'; def(2).replace = 'N<L,1>7:A000.1'; %log with timestamp
 %Can add additional predefined things here
 i_def = length(def);
 
@@ -788,7 +788,7 @@ for i = 1:nLines
                         %continue looking for network, variable, and arrays
                         
                         %network
-                        if length(operandStr)>=9 && isequal(regexp(operandStr, 'N\d{1,2}(<.*?>)?:[A-Fa-f0-9]{4}\.[^\.\:]*'),1) 
+                        if length(operandStr)>=9 && isequal(regexp(operandStr, 'N(<.*?>)?\d{1,2}:[A-Fa-f0-9]{4}\.[^\.\:]*'),1) 
                             %N followed by 1 or 2 digits followed by : followed by 4 hex deigts followed by . without any further . or :
                             operand = []; 
                             %type, scope, and typemod refer to how subindex will be reported 
@@ -872,6 +872,9 @@ for i = 1:nLines
                                 elseif nSubIndices > 1
                                     typemodEl = 192; %0xC0
                                     typeEl = 5;
+                                    if isempty(scopeEl) %only set scopeEl if it has not been set by variable subindex
+                                        scopeEl = 0;
+                                    end
                                 end
                             end
                             
