@@ -1409,7 +1409,7 @@ scriptbody = [];
 
 fprintf(fidOpCodeList, 'Opcode list...');
 for k = 1: length(opBytes)
-    fprintf(fidOpCodeList,'\n');
+    fprintf(fidOpCodeList,'\r\n');
     fprintf(fidOpCodeList,'%02X ', opBytes{k});
     scriptbody = [scriptbody opBytes{k}];
 end
@@ -1451,7 +1451,7 @@ download = [header, scriptbody, globaltable, stacktable, consttable, scriptID];
 fprintf(fidDownload, 'Download image...');
 for i=1:16:length(download)
     ei = min(i+16-1, length(download));
-    fprintf(fidDownload, '\n%04X:   %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X ', i-1, download(i:ei));
+    fprintf(fidDownload, '\r\n%04X:   %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X ', i-1, download(i:ei));
 end
 
 disp('Finished Assembly')
