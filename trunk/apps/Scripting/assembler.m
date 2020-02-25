@@ -2,7 +2,7 @@ function [download, hFig, var, def, operation] = assembler(scriptID, file, hFig,
 
 download = [];
 if nargin<6
-    scriptName = [];
+    scriptName = 'unnamed_script';
     if nargin<5
         nnp=[];
         if nargin<4
@@ -29,12 +29,16 @@ end
 if ~isfolder('debug')
     mkdir('debug');
 end
+if ~isfolder(['debug/' scriptName])
+    mkdir(['debug/' scriptName]);
+end
+path = ['debug/' scriptName '/'];
 
-fidOperations = fopen('debug/operations.txt', 'w');
-fidVarTables = fopen('debug/variables.txt', 'w');
-fidOpCodeList = fopen('debug/opcodelist.txt', 'w');
-fidDownload  = fopen('debug/downloadImage.txt', 'w');
-fidLines = fopen('debug/lines.txt', 'w');
+fidOperations = fopen([path 'operations.txt'], 'w');
+fidVarTables = fopen([path 'variables.txt'], 'w');
+fidOpCodeList = fopen([path 'opcodelist.txt'], 'w');
+fidDownload  = fopen([path 'downloadImage.txt'], 'w');
+fidLines = fopen([path 'lines.txt'], 'w');
 
 fid = fopen(file, 'r');
 if fid == -1
@@ -684,7 +688,7 @@ for i = 1:nLines
                     operandStr = operation(i_op).result.str;
                     if operation(i_op).result.literal
                         operation(i_op).result.literal = operandStr;
-                        operation(i_op).result.typeScope = 6;
+                        operation(i_op).result.typeScope = typeStr2Code('uint16');
                     	break;
                     end
                 end
@@ -701,17 +705,17 @@ for i = 1:nLines
                     if ~isnan(operand) && isreal(operand) %numeric decimal literal (scalar)
                         scope = 0;
                         if operand<0
-                            type = 4;
+                            type = typeStr2Code('int32');
                             operand = typecast(int32(operand), 'uint8');
                         else
-                            type = 7;
+                            type = typeStr2Code('uint32');
                             operand = typecast(uint32(operand), 'uint8');
                         end
                     elseif length(operandStr)>2 && isequal(operandStr(1:2), '0b') %numeric binary literal (scalar)
                         try
                             operand = bin2dec(operandStr(3:end));
                             scope = 0;
-                            type = 7;
+                            type = typeStr2Code('uint32');
                             operand = typecast(uint32(operand), 'uint8');
                         catch
                             errStr=addText(errStr, 'invalid binary literal: 0b...');  
@@ -720,7 +724,7 @@ for i = 1:nLines
                         try
                             operand = hex2dec(operandStr(3:end));
                             scope = 0;
-                            type = 7;
+                            type = typeStr2Code('uint32');
                             operand = typecast(uint32(operand), 'uint8');
                         catch
                             errStr=addText(errStr, 'invalid hex literal: 0x..."');  
@@ -731,23 +735,23 @@ for i = 1:nLines
                         operand = operandStr(2:end-1);
                         operand = [uint8(operand) uint8(0)]; %null terminate string
                         scope = 0;
-                        type = 8;
+                        type = typeStr2Code('string');
 
                     %bytearray literal
                     elseif length(operandStr)>2 && operandStr(1) == '!' && operandStr(end) == '!' 
-                        operand = hex2dec(regexp(operandStr(2:end-1), '[A-Fa-f0-9]{2}','match'));
+                        operand = hex2dec(regexp(operandStr(2:end-1), '[A-Fa-f0-9]{2}','match'))';
                         scope = 0;
-                        type = 8;
+                        type = typeStr2Code('ba');
 
                     %array literal
                     elseif length(operandStr)>2 && operandStr(1) == '[' && operandStr(end) == ']' 
                         operand = str2double(regexp(operandStr(2:end-1), '\d+','match'));
                         scope = 0;
                         if all(operand>0)
-                            type = 7;
+                            type = typeStr2Code('uint32');
                             operand = typecast(uint32(operand), 'uint8');
                         else
-                            type = 4; 
+                            type = typeStr2Code('int32'); 
                             operand = typecast(int32(operand), 'uint8');
                         end
                         typemod = 0;
@@ -804,9 +808,9 @@ for i = 1:nLines
                             odIndex = [];
 
                             %Get NODE
-                            nodeStr = regexp(operandStr, 'N\d{1,2}', 'match'); 
+                            nodeStr = regexp(operandStr, '\d{1,2}:', 'match'); 
                             if ~isempty(nodeStr)
-                                nodeStr = nodeStr{1}(2:end); %convert to string  and scrap leading N 
+                                nodeStr = nodeStr{1}(1:end-1); %convert to string  and scrap trailing : 
                                 node = str2double(nodeStr); 
                                 if isnan(node) || node>15 ||~isreal(node)
                                     warnStr = addText(warnStr, 'node should be 15 or lower'); 
@@ -1005,10 +1009,13 @@ for i = 1:nLines
                                 varUsage = [varUsage; iDefinedVar];
                                 el = typecast(uint16(el), 'uint8');                             %undefined variable
                             else
+                                if operandStr(1) == 'N'
+                                    warnStr=addText(errStr, 'possible wrong Network format');
+                                end
                                 if j<=nOperands
                                     errStr=addText(errStr, ['undefined variable in operand' num2str(j)]);  
                                 else
-                                    errStr=addText(errStr, 'undefined variable in result');  
+                                    errStr=addText(errStr, 'undefined variable in result');
                                 end
                             end
                             
