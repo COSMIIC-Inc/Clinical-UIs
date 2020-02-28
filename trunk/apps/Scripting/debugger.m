@@ -69,7 +69,16 @@ classdef debugger < handle
             
             app.ASM.DBG = app;
             app.createDebugButtons();
+            
+            app.disableDebug();
+
         end %debugger (construtor)
+        
+        function disableDebug(app)
+            %DISABLEDEBUG
+            app.DebugEnableCheckbox.Value = false;
+            app.onDebugEnableCheckboxClick(app.DebugEnableCheckbox, []);
+        end %disableDebug
         
         function createDebugButtons(app)
             % CREATEDEBUGBUTTONS
@@ -107,7 +116,16 @@ classdef debugger < handle
             
         end %redrawControls
         
-
+        function closeMonitors(app)
+            %CLOSEMONITORS 
+            if ~isempty(app.stackMonitor) && isvalid(app.stackMonitor)
+                delete(app.stackMonitor)
+            end
+            if ~isempty(app.globalMonitor) && isvalid(app.globalMonitor)
+                delete(app.globalMonitor)
+            end
+            
+        end %redrawControls
         
         function onShowStackMonitorButtonClick(app, src, event)
             % ONSHOWSTACKMONITORBUTTONCLICK
@@ -134,6 +152,8 @@ classdef debugger < handle
         function onDebugEnableCheckboxClick(app, src, event)
             if src.Value
                 disp('Enable Debugging')
+                
+                app.ASM.ListBox.String = app.ASM.ListBox.UserData;  %Remove Operand/Result Values 
                 if ismember(app.ASM.scriptP, 1:25) 
                     resp = app.nnp.nmt(7, 'AB', app.ASM.scriptP, 0); %TODO: support PDO/Alarm enabled scripts (Param2=1)
                     if ~isequal(resp, hex2dec('AB'))
@@ -174,8 +194,6 @@ classdef debugger < handle
                     disp('invalid script download location') %TODO: remove
                 end
             else
-                %Remove Operand/Result Values 
-                app.ASM.ListBox.String = app.ASM.ListBox.UserData; 
                 disp('Disable Debugging')
                 resp = app.nnp.nmt(7, 'AC'); 
                 if ~isequal(resp, hex2dec('AC'))
@@ -206,6 +224,11 @@ classdef debugger < handle
             end
         end
 
+        function showJumpResult(app, i_op, currentLine, jump)
+            %SHOWJUMPRESULT
+            
+        end %showJumpResult
+        
         function showOperandResultValues(app, i_op, currentLine, operands, result)
             %SHOWOPERANDRESULTVALUES
                 operation = app.ASM.operation;
@@ -232,18 +255,26 @@ classdef debugger < handle
                             if operands(j) >= baseRAM %may be pointer to RAM rather than value
                                 switch app.isPointer(operation(i_op).operand(j))
                                     case 0 %not a pointer
-                                        newStr = sprintf(' (0x%X=%d) ', operands(j), varCast);
+                                        newStr = sprintf('(0x%X=%d)', operands(j), varCast);
                                     case 1 %must be a pointer
-                                        newStr = sprintf(' (*%d) ', operands(j)-baseRAM);
+                                        newStr = sprintf('(*%d)', operands(j)-baseRAM);
                                     case 2 %may be a pointer (not sure with network operands)
-                                        newStr = sprintf(' (0x%X=%d OR *%d) ', operands(j), varCast, operands(j)-baseRAM);
+                                        newStr = sprintf('(0x%X=%d OR *%d)', operands(j), varCast, operands(j)-baseRAM);
                                 end
                             else %not a pointer
-                                newStr = sprintf(' (0x%X=%d) ', operands(j), varCast);
+                                newStr = sprintf('(0x%X=%d)', operands(j), varCast);
                             end
-
-                            operandStr = [operandStr(1:ei_op(j)+offset), newStr, operandStr(ei_op(j)+offset+1:end)];
-                            offset = offset + length(newStr);
+                            
+                            newStr = ['<BODY BGCOLOR=#FFFF00><b>', newStr, '</b><BODY BGCOLOR=#FFFFFF><FONT COLOR="black">'];
+                            n = length(newStr);
+                            
+                            operandStrPreceding = operandStr(1:ei_op(j) + offset);
+                            operandStrDeblanked = deblank(operandStrPreceding);
+                            spacesRemoved = length(operandStrPreceding) - length(operandStrDeblanked);
+                            newStr = [newStr, char(ones(1, spacesRemoved)*double(' '))]; %add removed spaces after newStr
+                            
+                            operandStr = [operandStrDeblanked, newStr, operandStr(ei_op(j)+offset+1:end)];
+                            offset = offset + n;
                         end
                     end
                     str = [str(1:si_operand-1), operandStr, str(ei_operand+1:end)];
@@ -258,18 +289,27 @@ classdef debugger < handle
                         end
 
                         if result >= baseRAM %may be pointer to RAM rather than value
-                            switch isPointer(operation(i_op).result)
+                            switch app.isPointer(operation(i_op).result)
                                 case 0 %not a pointer
-                                    newStr = sprintf(' (0x%X=%d) ', result, varCast);
+                                    newStr = sprintf('(0x%X=%d)', result, varCast);
                                 case 1 %must be a pointer
-                                    newStr = sprintf(' (*%d) ', result-baseRAM);
+                                    newStr = sprintf('(*%d)', result-baseRAM);
                                 case 2 %may be a pointer (not sure with network operands)
-                                    newStr = sprintf(' (0x%X=%d OR *%d) ', result, varCast, result-baseRAM);
+                                    newStr = sprintf('(0x%X=%d OR *%d)', result, varCast, result-baseRAM);
                             end
                         else %not a pointer
-                            newStr = sprintf(' (0x%X=%d) ', result,varCast);
+                            newStr = sprintf('(0x%X=%d)', result,varCast);
                         end
-                        resultStr = [resultStr, newStr];
+                        newStr = ['<BODY BGCOLOR=#FFFF00><b>', newStr, '</b><BODY BGCOLOR=#FFFFFF><FONT COLOR="black">'];
+                        n = length(newStr);
+
+                        resultStrDeblanked = deblank(resultStr);
+                        spacesRemoved = length(resultStr) - length(resultStrDeblanked);
+                        newStr = [newStr, char(ones(1, spacesRemoved)*double(' '))]; %add removed spaces after newStr
+
+                        resultStr = [resultStrDeblanked, newStr];
+                        %offset = offset + n;
+                        
                         str = [str(1:si_result+offset-1), resultStr, str(ei_result+offset+1:end)];
                     end
                 end
@@ -296,17 +336,21 @@ classdef debugger < handle
             end
       
             control = 1;
-            attempt = 1;
+            attempt = 0;
             status = 0;
             done = false;
             
-             while control==1 && status == 0 % wait until debug step has completed
+            while control == 1 && status == 0 % wait until debug step has completed
                 attempt = attempt + 1;
                 if attempt > 10
-                    fprintf('\nscript line has not completed running.  may be at end\n')
-                    break;
+                    userResp = questdlg('Operation has not completed running. Try again?');
+                    if isequal(userResp, 'Yes')
+                        attempt = 0;
+                    else
+                        break;
+                    end
                 end
-                 resp = app.nnp.read(7, '1f52', 1, 'uint8', 4); %read 8-bit status/control, exec number, opcode
+                resp = app.nnp.read(7, '1f52', 1, 'uint8', 4); %read 8-bit status/control, exec number, opcode
                 if length(resp) == 4
                     control = resp(1);
                     status = resp(2);
@@ -321,8 +365,11 @@ classdef debugger < handle
                     %error
                     fprintf('\nerror reading control/status\n')
                 end
+                
              end
-            if status > 0
+            
+            %Display runtime errors 
+            if status > 0 
                 if status < length(app.scripterrors)
                     msgbox(['Runtime Error: ',  app.scripterrors{status+1}])
                     disp(['Runtime Error: ',  app.scripterrors{status+1}]) %TODO remove
@@ -330,55 +377,67 @@ classdef debugger < handle
                     msgbox(['Unknown Runtime Error: ', num2str(status)])
                     disp(['Unknown Runtime Error: ', num2str(status)]) %TODO remove
                 end
+
                 %disable further debugging
                 done = true;
-            end
+             end
             
             if ~done
-                resp = app.nnp.read(7, '1f52', 5, 'uint32', 8);  %read 32-bit  types (opAddress, operands, result, timer)
-                if length(resp) == 8
-                    baseaddress = hex2dec('30000')+(app.ASM.scriptP-1)*2048+10; 
-                    address = resp(1);
-                    scriptBodyAddress = address - baseaddress; 
-                    i_op = find(arrayfun(@(x) x.address == scriptBodyAddress, operation), 1); %find operation matching current address
-                    if isempty(i_op)
-                        msgbox(sprintf('PM pointing to unknown operation. No operation has address 0x%04X (%d)',...
-                            scriptBodyAddress, scriptBodyAddress));
-                    else
-                        currentLine = operation(i_op).line;
-                        fprintf('\ncurrent line %d\n', currentLine); 
-
-                        if opcodeBytePM ~= operation(i_op).opCodeByte
-                            if i_op<2
-                                disp ('why here?')
-                            else
-                                msgbox(sprintf('opCode from PM (%d - %s) does not match opCode (%d - %s) at current line %d, address 0x%04X (%d)', ...
-                                    opCodeBytePM, opCodeNamePM,  operation(i_op-1).opCodeByte), operation(i_op-1).opCodeName, currentLine, scriptBodyAddress, scriptBodyAddress);
-                            end
-                        end
-
-                        if currentLine > length(app.ASM.ListBox.UserData)
-                            if isequal(operation(i_op).opCodeName, 'EXIT')
-                                done = true;
-                            else
-                                msgbox(sprintf('Line %d for operation (%d) matching address 0x%04X (%d) exceeds ListBox String length', ...
-                                    currentLine, i_op, scriptBodyAddress, scriptBodyAddress));
-                            end
+                attempt = 0;
+                while true %Read operation info retry loop
+                    attempt = attempt + 1;
+                    if attempt > 3
+                        userResp = questdlg('Could not read operation address, operand/result values. Try again?');
+                        if isequal(userResp, 'Yes')
+                            attempt = 0;
                         else
-                            operands = resp(2:6);
-                            result = resp(7);
-                            app.showOperandResultValues(i_op, currentLine, operands, result);
+                            break;
                         end
-
                     end
+                    resp = app.nnp.read(7, '1f52', 5, 'uint32', 8);  %read 32-bit  types (opAddress, operands, result, timer)
+                    if length(resp) == 8
+                        baseaddress = hex2dec('30000')+(app.ASM.scriptP-1)*2048+10; 
+                        address = resp(1);
+                        scriptBodyAddress = address - baseaddress; 
+                        i_op = find(arrayfun(@(x) x.address == scriptBodyAddress, operation), 1); %find operation matching current address
+                        if isempty(i_op)
+                            msgbox(sprintf('PM pointing to unknown operation. No operation has address 0x%04X (%d)',...
+                                scriptBodyAddress, scriptBodyAddress));
+                        else
+                            currentLine = operation(i_op).line;
+                            fprintf('\ncurrent line %d\n', currentLine); 
 
-                     fprintf('\naddress: 0x%08X, opVar0: %d, opVar1: %d, opVar2: %d, opVar3: %d, opVar4: %d, Result: %d, Timer: %d\n', resp);
-                else
-                    %error
-                    i_op = [];
-                    fprintf('\nerror reading Operand Values\n')
+                            if opcodeBytePM ~= operation(i_op).opCodeByte
+                                if i_op<2
+                                    disp ('why here?')
+                                else
+                                    msgbox(sprintf('opCode from PM (%d - %s) does not match opCode (%d - %s) at current line %d, address 0x%04X (%d)', ...
+                                        opCodeBytePM, opCodeNamePM,  operation(i_op-1).opCodeByte), operation(i_op-1).opCodeName, currentLine, scriptBodyAddress, scriptBodyAddress);
+                                end
+                            end
+
+                            if currentLine > length(app.ASM.ListBox.UserData)
+                                if isequal(operation(i_op).opCodeName, 'EXIT')
+                                    done = true;
+                                else
+                                    msgbox(sprintf('Line %d for operation (%d) matching address 0x%04X (%d) exceeds ListBox String length', ...
+                                        currentLine, i_op, scriptBodyAddress, scriptBodyAddress));
+                                end
+                            else
+                                operands = resp(2:6);
+                                result = resp(7);
+                                app.showOperandResultValues(i_op, currentLine, operands, result);
+                            end
+
+                        end
+                        fprintf('\naddress: 0x%08X, opVar0: %d, opVar1: %d, opVar2: %d, opVar3: %d, opVar4: %d, Result: %d, Timer: %d\n', resp);
+                        break; %leave retry loop
+                    else
+                        %error
+                        i_op = [];
+                        fprintf('\nerror reading Operand Values\n')
+                    end
                 end
-
                 if ~isempty(app.stackMonitor) && isvalid(app.stackMonitor)
                     app.stackMonitor.populateTable();
                 end
@@ -387,31 +446,47 @@ classdef debugger < handle
                 end
             end
 
-    %Don't really need to read this every time - not particularly useful
-    %             resp = app.nnp.read(7, '1f52', 15, 'uint8'); %read 10 variable table info table
-    %             if length(resp) == 10
-    %                 fprintf('\n VarTableInfo:');
-    %                 fprintf('%02X ', resp);
-    %                 fprintf('\n');
-    %             else
-    %                 %error
-    %                 fprintf('\nerror reading Var Table Info\n')
-    %             end
+            %Don't really need to read this every time - not particularly useful
+            %             resp = app.nnp.read(7, '1f52', 15, 'uint8'); %read 10 variable table info table
+            %             if length(resp) == 10
+            %                 fprintf('\n VarTableInfo:');
+            %                 fprintf('%02X ', resp);
+            %                 fprintf('\n');
+            %             else
+            %                 %error
+            %                 fprintf('\nerror reading Var Table Info\n')
+            %             end
 
             if ~done
-                resp = app.nnp.read(7, '1f52', 16, 'uint8'); %read jump value
-                if length(resp) == 1
-                    jump = resp;
-                    fprintf('\nJump 0x%02X\n', resp);
-                else
-                    %error
-                    jump = [];
-                    fprintf('\nerror reading jump\n')
+                attempt = 0;
+                while true %Read jump retry loop
+                    attempt = attempt + 1;
+                    if attempt > 3
+                       userResp = questdlg('Could not read jump (branching) information. Try again?');
+                        if isequal(userResp, 'Yes')
+                            attempt = 0;
+                        else
+                            break;
+                        end 
+                    end
+                    
+                    resp = app.nnp.read(7, '1f52', 16, 'uint8'); %read jump value
+                    if length(resp) == 1
+                        jump = resp;
+                        fprintf('\nJump 0x%02X\n', resp);
+                        break;
+                    else
+                        %error
+                        jump = [];
+                        fprintf('\nerror reading jump\n')
+                    end
                 end
 
-                
-                if isempty(i_op)
-                    disp('Lost!')
+                if isempty(i_op) || isempty(jump)
+                    userResp = questdlg('Lost in Script! Do you want to disable debugging?'); 
+                    if isequal(userResp, 'Yes')
+                        done = true;
+                    end
                 else
                     if jump < 2
                         if (i_op+1)<=length(operation)
@@ -448,8 +523,7 @@ classdef debugger < handle
                 end
             end
             if done
-                    app.DebugEnableCheckbox.Value = false;
-                    app.onDebugEnableCheckboxClick(app.DebugEnableCheckbox, []);
+                app.disableDebug();
             end
 
             if radioSettings.retries > 0 

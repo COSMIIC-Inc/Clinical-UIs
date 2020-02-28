@@ -710,6 +710,7 @@ classdef assembler < handle
             end
             
             app.Figure.SizeChangedFcn = {@app.onWindowSizeChanged};
+            app.Figure.CloseRequestFcn = {@app.onCloseFigure};
             app.Figure.Visible = 'on';
 
         end %createFigure
@@ -924,7 +925,7 @@ classdef assembler < handle
             if length(si) > 1
                 opStr = strtrim(str(si(2):ei(2)));
                 if isDef
-                    if ~isempty(ei_varinit)
+                    if ~isempty(strVarInit)
                         if app.i_def > 0
                             defnames = arrayfun(@(x) x.name, app.def(1:end-1), 'UniformOutput', false);
                         else
@@ -1066,7 +1067,7 @@ classdef assembler < handle
                             ei_operand = ei(maxOperands+1);
                             app.addWarning( 'ignoring operands'); 
                             si_unused = ei(maxOperands+1)+1;
-                            ei_unused = endparse;
+                            ei_unused = length(str);
                             nOperands = maxOperands;
                         else
                             si_operand = ei(1)+1;
@@ -1418,7 +1419,7 @@ classdef assembler < handle
                                 operand = typecast(int32(operand), 'uint8');
                             end
                             typemod = 0;
-                            typemodEL = modifierStr2Code('array'); %0x80 array modifier
+                            typemodEL = app.modifierStr2Code('array'); %0x80 array modifier
 
                         else
 
@@ -1496,7 +1497,7 @@ classdef assembler < handle
                                 if ~isempty(subIndexStrHex) %literal subIndex 
                                     subIndexStrHex = subIndexStrHex{1}(2:end); %convert to string and remove .
                                     if length(subIndexStrHex)>2
-                                        app.errStr = app.addError( 'Literal subindex must be hex 0-ff/FF');
+                                        app.addError( 'Literal subindex must be hex 0-ff/FF');
                                         %subIndex = 255; %avoid further errors
                                     else
                                         subIndex = hex2dec(subIndexStrHex);
@@ -1739,6 +1740,17 @@ classdef assembler < handle
         
         
         %--------------UI Callbacks ------------------
+        function onCloseFigure(app, src, event)
+            %ONCLOSEFIGURE closes associated figures with main figure
+            try
+                if ~isempty(app.DBG)
+                    app.DBG.closeMonitors()
+                end
+            catch
+                disp('assembler handle deleted?');
+            end
+            delete(src);
+        end %onCloseFiure
         
         function onFontSizeChanged(app, src, event)
             % ONFONTSIZECHANGED
