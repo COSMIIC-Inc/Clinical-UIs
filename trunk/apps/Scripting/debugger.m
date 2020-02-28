@@ -223,11 +223,6 @@ classdef debugger < handle
                app.RunToLineButton.Enable = 'off';
             end
         end
-
-        function showJumpResult(app, i_op, currentLine, jump)
-            %SHOWJUMPRESULT
-            
-        end %showJumpResult
         
         function showOperandResultValues(app, i_op, currentLine, operands, result)
             %SHOWOPERANDRESULTVALUES
@@ -308,7 +303,6 @@ classdef debugger < handle
                         newStr = [newStr, char(ones(1, spacesRemoved)*double(' '))]; %add removed spaces after newStr
 
                         resultStr = [resultStrDeblanked, newStr];
-                        %offset = offset + n;
                         
                         str = [str(1:si_result+offset-1), resultStr, str(ei_result+offset+1:end)];
                     end
