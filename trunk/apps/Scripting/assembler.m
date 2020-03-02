@@ -158,6 +158,8 @@ classdef assembler < handle
         scriptName = []; %short script name (usually filename without ".nnpscript" extension)
         scriptID = 0;    %script unique Identifier (1-255)
         scriptP = 0;     %script pointer (download location, #)
+        scriptRev = 0;   %script revison (software version number)
+        scriptCRC = [];
         Figure = [];     %handle to Assembler Figure
         file = [];       %full filepath to *.nnpscript
         assemblerLogs = struct('operations', [], 'vartables', [], 'scriptbody', [], 'download', [], 'lines', []); %relative filepaths to assembler logging outputs
@@ -193,43 +195,50 @@ classdef assembler < handle
     
     
     methods
-        function app = assembler(scriptID, scriptP, file, scriptName, Figure, SED)
+        function app = assembler(scriptID, scriptP, file, scriptRev, scriptName, Figure, SED)
             %ASSEMBLER Parses *.nnpscript and assembles NNP PM script download images
             % asm = ASSEMBLER(scriptID, scriptP, file, scriptName, Figure, SED) constructs an assembler object (asm)
             %
             %    scriptID  : 1-25 (0 will not allow download, if empty a inputdialog will display) 
             %    scriptP   : 1-255 (0 will not allow download)
             %    file      : full path to .nnpscript file (if empty a file select dialog will open)
+            %    scriptRev : optional revision number for script to help track it
             %    scriptName: optional name of script. (if empty, gets set to *, in *.nnpscript)
             %    Figure    : optional handle to Figure, so new FIgure is not created.  (use asm.Figure, to get the figure handle)
             %    SED       : handle to scriptedit app to support download functions and get handle to NNP to support debugging 
 
-            if nargin <6
+            if nargin <7
                 SED = [];
-                if nargin <5
+                if nargin <6
                     Figure = [];
-                    if nargin<4
+                    if nargin<5
                         scriptName = [];
-                        if nargin<3
-                            [filename, pathname ] = uigetfile('*.nnpscript', 'Choose Script File');
-                            if filename == 0 
-                                return
-                            else
-                                file = [pathname filename];
+                        if nargin < 4
+                            scriptRev = str2double(inputdlg('scriptID'));
+                            if isnan(scriptRev) || scriptRev > 65535 || scriptRev < 0
+                               scriptRev = 0;
                             end
-                            if nargin<2
-                               scriptP = 0;
-
-                                if nargin<1
-                                   scriptID = str2double(inputdlg('scriptID'));
-                                   if isnan(scriptID) || ~ismember(scriptID , 0:255)
-                                       scriptID = 0;
-                                   end
+                            if nargin<3
+                                [filename, pathname ] = uigetfile('*.nnpscript', 'Choose Script File');
+                                if filename == 0 
+                                    return
+                                else
+                                    file = [pathname filename];
                                 end
+                                if nargin<2
+                                   scriptP = 0;
+
+                                    if nargin<1
+                                       scriptID = str2double(inputdlg('scriptID'));
+                                       if isnan(scriptID) || ~ismember(scriptID , 0:255)
+                                           scriptID = 0;
+                                       end
+                                    end
+                                end
+                            else
+                                iSlash = strfind(file, '\');
+                                filename = file(iSlash(end)+1:end);
                             end
-                        else
-                            iSlash = strfind(file, '\');
-                            filename = file(iSlash(end)+1:end);
                         end
                     end
                 end
@@ -246,6 +255,7 @@ classdef assembler < handle
             app.file = file;
             app.scriptID = scriptID;
             app.scriptP = scriptP;
+            app.scriptRev = scriptRev;
             app.scriptName = scriptName;
             app.SED = SED;
             app.Figure = Figure;
@@ -363,7 +373,7 @@ classdef assembler < handle
             gPointerBytes = typecast(uint16(H+B),'uint8');
             sPointerBytes = typecast(uint16(H+B+G),'uint8');
             cPointerBytes = typecast(uint16(H+B+G+S),'uint8');
-            ePointerBytes = typecast(uint16(H+B+G+S+C),'uint8');
+            RevBytes = typecast(uint16(app.scriptRev),'uint8');
             % add header and variable tables
             % Header
             % start   |#bytes|description
@@ -371,16 +381,21 @@ classdef assembler < handle
             %       2 | 2    | pointer to Global Var Table
             %       4 | 2    | pointer to Stack Var Table
             %       6 | 2    | pointer to Constant Var Table
-            %       8 | 2    | pointer to end of Script (D-1)
+            %       8 | 2    | script Revision number
             %      10 | B    | Script Body
             %    10+B | G    | global var bytes
             %  10+B+G | S    | stack var bytes
-            % 10+B+G+S | C    | const var bytes
+            % 10+B+G+S| C    | const var bytes
             %      D-1| 1    | script ID
+            %        D| 2    | CRC16
 
             %scriptID = str2double(inputdlg('scriptID'))
-            header = [dBytes, gPointerBytes, sPointerBytes, cPointerBytes, ePointerBytes];
-            app.downloadImage = [header, scriptbody, app.GlobalTable, app.StackTable, app.ConstTable, app.scriptID];  
+            header = [dBytes, gPointerBytes, sPointerBytes, cPointerBytes, RevBytes];
+            download = [header, scriptbody, app.GlobalTable, app.StackTable, app.ConstTable, app.scriptID];  
+            crc = app.calculateCRC16(download);
+            crcBytes = typecast(crc,'uint8');
+            app.downloadImage = [download, crcBytes];
+            app.scriptCRC = double(crc);
             
             %output download bytes list in same format as CE for comparison
             fprintf(app.assemblerLogs.download, 'Download image...');
@@ -389,6 +404,8 @@ classdef assembler < handle
                 fprintf(app.assemblerLogs.download, '\r\n%04X:   %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X ', i-1, app.downloadImage(i:ei));
             end
         end %createDownloadImage
+        
+
         
         function [opBytes, jumpLine] = assembleOperation(app, i_op, copyResult)
             % ASSEMBLEOPERATION
@@ -1456,7 +1473,7 @@ classdef assembler < handle
                             %continue looking for network, variable, and arrays
 
                             %network
-                            if length(operandStr)>=9 && isequal(regexp(operandStr, 'N(<.*?>)?\d{1,2}:[A-Fa-f0-9]{4}\.[^\.\:]*'),1) 
+                            if length(operandStr)>=9 && isequal(regexp(operandStr, '(\(\w+?\))?N(<.*?>)?\d{1,2}:[0-9abcdefABCDEF]{4}\.[^\.\:]*'),1) 
                                 %N followed by 1 or 2 digits followed by : followed by 4 hex deigts followed by . without any further . or :
                                 operand = []; 
                                 %type, scope, and typemod refer to how subindex will be reported 
@@ -1484,7 +1501,7 @@ classdef assembler < handle
                                 end
 
                                 %Get OD INDEX  - literal (hex) only - required
-                                indexStr = regexp(operandStr, '\:[A-Fa-f0-9]{4}\.', 'match');  
+                                indexStr = regexp(operandStr, '\:[0-9abcdefABCDEF]{4}\.', 'match');  
                                 if ~isempty(indexStr)
                                     indexStr = indexStr{1}(2:end-1); %convert to string  and scrap leading : and trailing .
                                     odIndex = hex2dec(indexStr); 
@@ -1493,7 +1510,7 @@ classdef assembler < handle
                                 end
 
                                 %Get OD SUBINDEX  - literal (hex) or variable -required
-                                subIndexStrHex = regexp(operandStr, '\.[0-9_a-fA-f]+', 'match'); %find . followed by 1 or more hex digits
+                                subIndexStrHex = regexp(operandStr, '\.[0-9abcdefABCDEF]+', 'match'); %find . followed by 1 or more hex digits
                                 if ~isempty(subIndexStrHex) %literal subIndex 
                                     subIndexStrHex = subIndexStrHex{1}(2:end); %convert to string and remove .
                                     if length(subIndexStrHex)>2
@@ -1531,7 +1548,7 @@ classdef assembler < handle
                                 end
 
                                 %Get NUMBER OF SUBINDICES - optional, default 1
-                                nSubIndicesStr = regexp(operandStr, '\^\w+', 'match'); %find ^ followed by word
+                                nSubIndicesStr = regexp(operandStr, '\^\d{1,2}', 'match'); %find ^ followed by word
                                 if ~isempty(nSubIndicesStr)
                                     nSubIndicesStr = nSubIndicesStr{1}(2:end); %convert to string and scrap '^'
                                     nSubIndices = str2double(nSubIndicesStr); 
@@ -1547,18 +1564,30 @@ classdef assembler < handle
                                 end
 
                                 %Get TYPE OF SUBINDEX - optional, default uint8
-                                typeStr = regexp(operandStr, '\|\w+', 'match'); %find | followed by word (type)
+                                typeStr = regexp(operandStr, '\(\w+?\)N', 'match'); %find ( followed by word followed by )N
                                 if isempty(typeStr)
-                                    type = app.typeStr2Code('uint8');  
-                                    app.addWarning( 'assuming uint8 type for network operand');
+                                    typeStr = regexp(operandStr, '\|\w+', 'match'); %find | followed by word (type)
+                                    if isempty(typeStr)
+                                        type = app.typeStr2Code('uint8');  
+                                        app.addWarning( 'assuming uint8 type for network operand');
+                                    else
+                                        typeStr = typeStr{1}(2:end); %convert to string and scrap '|'
+                                        type = app.typeStr2Code(typeStr); 
+                                        if isempty(type)
+                                            app.addWarning( 'invalid type for network operand'); %TODO change to errStr
+                                            type = app.typeStr2Code('uint8');
+                                        end
+                                    end
                                 else
-                                    typeStr = typeStr{1}(2:end); %convert to string and scrap '|'
+                                    typeStr = typeStr{1}(2:end-2); %convert to string and scrap ( )N 
                                     type = app.typeStr2Code(typeStr); 
                                     if isempty(type)
                                         app.addWarning( 'invalid type for network operand'); %TODO change to errStr
                                         type = app.typeStr2Code('uint8');
                                     end
                                 end
+                                
+                                
 
                                 %Get PORT/NETID - optional, 
                                 %default use r,R,or 2 : port = 2, netID = 1
@@ -1804,7 +1833,25 @@ classdef assembler < handle
         
     end %non-static methods
     
-    methods(Static)    
+    methods(Static)   
+       function crc = calculateCRC16(data)
+            %CALCULATECRC16 - CRC-16/CCITT-FALSE
+            %https://crccalc.com/
+            % test (0x29B1): dec2hex(assembler.calculateCRC16(uint8('123456789')))
+            
+            x = uint16(0);
+            crc = uint16(65535); %0xFFFF
+            
+            for i = 1:length(data)
+                x = bitxor(bitshift(crc, -8), uint16(data(i)));
+                x = bitxor(x, bitshift(x, -4));
+                
+                crc = bitxor(bitshift(crc,8),...
+                        bitxor(bitshift(x,12),...
+                           bitxor(bitshift(x,5), x)));
+            end
+        end
+        
         function result = isNumericType(type)
             %ISNUMERICTYPE
             result = ismember(type, {'uint8', 'int8', 'uint16', 'int16', 'uint32','int32'});
