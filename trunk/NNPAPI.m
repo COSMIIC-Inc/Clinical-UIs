@@ -1317,22 +1317,24 @@ classdef NNPAPI < handle
 
             counter = nPackets -1;
             address = 0;
+            packetCnt = 1;
+            attempt = 0;
 
             settings = NNP.getRadioSettings;
             if settings.rxTimeout<100
                 NNP.setRadio('Timeout', 100)
             end
 
-            for i=1:nPackets
+            while packetCnt <= nPackets
                 addrBytes = typecast(uint16(address), 'uint8');
 
 
-                if i==nPackets % last packet
+                if packetCnt==nPackets % last packet
                     pktN = rem(N,T);
                     if pktN==0
                         pktN = T;
                     end
-                    NNP.setRadio('Timeout', 251) %1s timeout
+                    NNP.setRadio('Timeout', 251) %1s timeout for last packet
                 else
                     pktN = T;
                 end
@@ -1348,11 +1350,27 @@ classdef NNPAPI < handle
                     disp(NNP.lastError)
                 end
                 if ~isequal(result, [1 0])
-                    NNP.setRadio('Timeout', settings.rxTimeout)
-                    return
+                    attempt = attempt + 1;
+                    if attempt > 3
+                        if err
+                            userResp = questdlg(sprintf('Error (%s) in loadScript at address 0x%02X. Keep trying?', NNP.lastError, address));
+                        else
+                            userResp = questdlg(sprintf('Unknown error in loadScript  at address 0x%02X. Keep trying?', NNP.lastError, address));
+                        end
+                        if isequal(userResp, 'Yes')
+                            continue;
+                        else
+                            NNP.setRadio('Timeout', settings.rxTimeout)
+                            return
+                        end
+                    else
+                        continue;
+                    end
                 end
                 pause(0.1)
+                attempt = 0;
                 address = address + T; 
+                packetCnt = packetCnt + 1;
                 counter = counter-1;
             end
         end
