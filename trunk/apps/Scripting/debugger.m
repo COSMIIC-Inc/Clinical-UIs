@@ -28,12 +28,13 @@ classdef debugger < handle
                 'DIVIDEBYZERO'; ...	%17
                 'GETNETWORKDATA';...	%18
                 'SETNETWORKDATA';...	%19
-                'UNUSED_20';... %20
+                'MAX_STRING';... %20
                 'OPERAND_TYPE_MISMATCH';...	%21
-                'UNUSED_22';... %22
-                'UNUSED_23';... %23
-                'RESETGLOBALS_FAILED';...	%24
-                'ABORTED'};	%25
+                'READ_SCRIPT_CONTROL';... %22
+                'WRITE_SCRIPT_CONTROL';... %23
+                'RESET_GLOBALS';...	%24
+                'ABORTED';...%25
+                'EXIT_DEBUG'};	%26
     end
     
     properties (Access = public)    
@@ -48,7 +49,7 @@ classdef debugger < handle
         RunToLineButton = []; %handle to RunToLineButton UI element
         ShowStackMonitorButton =[]; %handle to ShowStackMonitorButton UI element
         ShowGlobalMonitorButton = []; %handle to ShowGLobalMonitorButton UI element
-        
+        showLiteralValues = false;
         
     end
     
@@ -164,18 +165,16 @@ classdef debugger < handle
                     resp = app.nnp.read(7, '1f52', 1, 'uint8', 2);
                     if length(resp)==2
                         control = resp(1);
-                        disp(control)
                         status = resp(2);
                         if status > 0
-                            if status ==19 %TODO: fix this when PM script errors are corrected
+                            if status == 22 || status ==23 
                                 msgbox('May not have enabled script debugging ')
-                                disp('May not have enabled script debugging ') %TODO: remove
                             end
-        %                     if status < length(scripterrors)
-        %                         msgbox(['Runtime Error: ' scripterrors{status+1}])
-        %                     else
-        %                         msgbox(['Unknown Runtime Error: ' num2str(status)])
-        %                     end
+                            if status < length(app.scripterrors)
+                                disp(['Runtime Error: ' app.scripterrors{status+1}])
+                            else
+                                disp(['Unknown Runtime Error: ' num2str(status)])
+                            end
                         end
                     else
                         if ~confirmNMT
@@ -207,11 +206,14 @@ classdef debugger < handle
                     disp(control)
                     status = resp(2);
                     if status > 0
-                        if status ==19 %TODO: fix this when PM script errors are corrected
+                        if status == 22 || status ==23  
                             msgbox('May not have enabled script debugging ')
-                            disp('May not have enabled script debugging ') %TODO remove
                         end
-                        %msgbox(['Error: ' num2str(status)])
+                        if status < length(app.scripterrors)
+                            disp(['Runtime Error: ' app.scripterrors{status+1}])
+                        else
+                            disp(['Unknown Runtime Error: ' num2str(status)])
+                        end
                     end
                 else
                     if ~confirmNMT
@@ -235,6 +237,8 @@ classdef debugger < handle
                 si_result = app.ASM.strPosResult(currentLine, 1);
                 ei_result = app.ASM.strPosResult(currentLine, 2);
                 offset = 0;
+                baseScriptAddress = hex2dec('30000')+(app.ASM.scriptP-1)*2048; 
+                
                 if ~isnan(si_operand)
                     operandStr = str(si_operand:ei_operand);
 
@@ -244,17 +248,32 @@ classdef debugger < handle
                         if assembler.isNumericType(typeStr)
                             varCast = typecast(uint32(operands(j)), typeStr);
                             varCast = varCast(1);
+                        else
+                            varCast = [];
                         end
 
-                        if isempty(operation(i_op).operand(j).literal)
-                            if operands(j) >= baseRAM %may be pointer to RAM rather than value
+                        if isempty(operation(i_op).operand(j).literal) || app.showLiteralValues
+                            
+                            %inOperationRange = operands(j) > operation(i_op).address + baseScriptAddress && operands(j) < operation(i_op+1).address + baseScriptAddress;
+                            %app.ASM.downloadImage(operand(j)-baseScriptAddress+1)
+                            inScriptRange = operands(j) > baseScriptAddress && operands(j) < baseScriptAddress + length(app.ASM.downloadImage);
+
+                            if operands(j) >= baseRAM || inScriptRange %may be pointer to RAM, or Download Image rather than value
                                 switch app.isPointer(operation(i_op).operand(j))
                                     case 0 %not a pointer
                                         newStr = sprintf('(0x%X=%d)', operands(j), varCast);
                                     case 1 %must be a pointer
-                                        newStr = sprintf('(*%d)', operands(j)-baseRAM);
+                                        if inScriptRange
+                                            newStr = sprintf('(F*%d)', operands(j));
+                                        else
+                                            newStr = sprintf('(R*%d)', operands(j)-baseRAM);
+                                        end
                                     case 2 %may be a pointer (not sure with network operands)
-                                        newStr = sprintf('(0x%X=%d OR *%d)', operands(j), varCast, operands(j)-baseRAM);
+                                         if inScriptRange
+                                            newStr = sprintf('(0x%X=%d OR F*%d)', operands(j), varCast, operands(j));
+                                         else
+                                            newStr = sprintf('(0x%X=%d OR R*%d)', operands(j), varCast, operands(j)-baseRAM);
+                                         end
                                 end
                             else %not a pointer
                                 newStr = sprintf('(0x%X=%d)', operands(j), varCast);
@@ -275,22 +294,36 @@ classdef debugger < handle
                     str = [str(1:si_operand-1), operandStr, str(ei_operand+1:end)];
                 end
                 if ~isnan(si_result)
-                    if operation(i_op).result.literal==0 %not a jump type
+                    if operation(i_op).result.literal==0 || app.showLiteralValues
                         resultStr = str((si_result:ei_result)+offset);
                         typeStr = assembler.typeCode2Str(bitand(operation(i_op).result.typeScope, 15));
                         if assembler.isNumericType(typeStr)
                             varCast = typecast(uint32(result), typeStr);
                             varCast = varCast(1);
+                        else
+                            varCast = [];
                         end
 
-                        if result >= baseRAM %may be pointer to RAM rather than value
+                        %inOperationRange = result > operation(i_op).address + baseScriptAddress && result < operation(i_op+1).address + baseScriptAddress;
+                        inScriptRange = result > baseScriptAddress && result < baseScriptAddress + length(app.ASM.downloadImage);
+
+                        if result >= baseRAM || inScriptRange %may be pointer to RAM, or Download Image rather than value
                             switch app.isPointer(operation(i_op).result)
                                 case 0 %not a pointer
                                     newStr = sprintf('(0x%X=%d)', result, varCast);
                                 case 1 %must be a pointer
-                                    newStr = sprintf('(*%d)', result-baseRAM);
+                                    if inScriptRange
+                                         newStr = sprintf('(F*%d)', result);
+                                    else
+                                         newStr = sprintf('(R*%d)', result-baseRAM);
+                                    end
                                 case 2 %may be a pointer (not sure with network operands)
-                                    newStr = sprintf('(0x%X=%d OR *%d)', result, varCast, result-baseRAM);
+                                    if inScriptRange
+                                         newStr = sprintf('(0x%X=%d OR F*%d)', result, varCast, result);
+                                    else
+                                        newStr = sprintf('(0x%X=%d OR R*%d)', result, varCast, result-baseRAM);
+                                    end
+                                    
                             end
                         else %not a pointer
                             newStr = sprintf('(0x%X=%d)', result,varCast);
