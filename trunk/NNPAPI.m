@@ -1215,8 +1215,8 @@ classdef NNPAPI < handle
                 if fastMode
                     retryNMT=0;
                     while sendNMT 
-                        resp = NNP.nmt(node, 'D0', memSelect); %Force read with auto increment
-                        if isequal(resp, hex2dec('D0'))
+                        resp = NNP.nmt(node, 'E8', memSelect); %Force read with auto increment
+                        if isequal(resp, hex2dec('E8'))
                             break;
                         else
                             addressRead = NNP.read(node, '2020', 1, 'uint32');   %get address
@@ -1325,7 +1325,19 @@ classdef NNPAPI < handle
                 NNP.setRadio('Timeout', 100)
             end
 
+            h=waitbar(0, sprintf('Loading script to location #%d', SP));
             while packetCnt <= nPackets
+                if ~isempty(h) 
+                    if ~isvalid(h)  %if waitbar closed assume user wants to cancel
+                        userResp = questdlg('Do you want to cancel loading script?');
+                        if isequal(userResp, 'Yes')
+                            return
+                        else
+                            h = waitbar(packetCnt/nPackets, sprintf('Loading script to location #%d', SP)); %if waitbar was closed, reopen it
+                        end
+                    end
+                    waitbar(packetCnt/nPackets, h)
+                end
                 addrBytes = typecast(uint16(address), 'uint8');
 
 
@@ -1361,6 +1373,9 @@ classdef NNPAPI < handle
                             continue;
                         else
                             NNP.setRadio('Timeout', settings.rxTimeout)
+                            if ~isempty(h) && isvalid(h)
+                                close(h)
+                            end
                             return
                         end
                     else
@@ -1372,6 +1387,9 @@ classdef NNPAPI < handle
                 address = address + T; 
                 packetCnt = packetCnt + 1;
                 counter = counter-1;
+            end
+            if ~isempty(h) && isvalid(h)
+                close(h)
             end
         end
 

@@ -214,7 +214,7 @@ classdef assembler < handle
                     if nargin<5
                         scriptName = [];
                         if nargin < 4
-                            scriptRev = str2double(inputdlg('scriptID'));
+                            scriptRev = str2double(inputdlg('scriptRev'));
                             if isnan(scriptRev) || scriptRev > 65535 || scriptRev < 0
                                scriptRev = 0;
                             end
@@ -279,7 +279,7 @@ classdef assembler < handle
             app.closeAssemblerLogs();
 
         end %assembler (constructor)
-        
+                
         function createDownloadImage(app)
             %CREATEDOWNLOADIMAGE 
             
@@ -724,6 +724,11 @@ classdef assembler < handle
             if ~isempty(app.SED)
                 app.DownloadDebugButton = uicontrol(app.Figure, 'Style', 'pushbutton', 'String', 'Download & Debug', 'Position', [w-130 h-100 120 40]);
                 app.DownloadDebugButton.Callback = {@app.onDownloadDebugClick}; 
+                if isempty(app.SED.nnp)
+                    app.DownloadDebugButton.Enable = 'off';
+                else
+                    app.DownloadDebugButton.Enable = 'on';
+                end
             end
             
             app.Figure.SizeChangedFcn = {@app.onWindowSizeChanged};
