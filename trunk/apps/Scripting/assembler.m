@@ -176,6 +176,8 @@ classdef assembler < handle
         ListBox = []; %handle to ListBox that displays HTML formatted script lines
         FontSizeLabel = []; %handle to FontSizeLabel UI element
         FontSizeEditField = []; %handle to FontSizeEditFIeld UI element
+        EditButton =[]; %handle to EditButton UI element 
+        ReassembleButton =[]; %handle to Reassemble UI element
         DownloadDebugButton = []; %handle to DownloadDebugButton UI element (only appears if SED is passed as argument)
         DBG = []; %handle to debugger
         SED = []; %handle to scripteditor
@@ -283,33 +285,53 @@ classdef assembler < handle
         function createDownloadImage(app)
             %CREATEDOWNLOADIMAGE 
             
-            nOps = length(app.operation);
-            nLabels = length(app.label);
+            nOps = app.i_operation;
+            if nOps == 0
+                msgbox('No operations in script!')
+                app.downloadImage = [];
+                app.scriptCRC = [];
+            else
             
-            jump = zeros(nOps,1);
-            opBytes = cell(nOps,1);
-            address=0;
-            for k=1:nOps
-                copyResult = app.opcodelist{app.operation(k).index, 8};
-                try 
-                    [opBytes{k}, jump(k)] = app.assembleOperation(k, copyResult);
-                catch
-                    msgbox(['Quitting assembly.  Could not assemble operation ' num2str(k) ', Line: ' num2str(app.operation(k).line)]);
-                    disp(['Quitting assembly.  Could not assemble operation ' num2str(k) ', Line: ' num2str(app.operation(k).line)]);
-                    return;
+                nLabels = length(app.label);
+
+                jump = zeros(nOps,1);
+                opBytes = cell(nOps,1);
+                address=0;
+                for k=1:nOps
+                    copyResult = app.opcodelist{app.operation(k).index, 8};
+                    try 
+                        [opBytes{k}, jump(k)] = app.assembleOperation(k, copyResult);
+                    catch
+                        msgbox(['Quitting assembly.  Could not assemble operation ' num2str(k) ', Line: ' num2str(app.operation(k).line)]);
+                        disp(['Quitting assembly.  Could not assemble operation ' num2str(k) ', Line: ' num2str(app.operation(k).line)]);
+                        return;
+                    end
+                    app.operation(k).address = address;
+                    address = address + length(opBytes{k});
                 end
-                app.operation(k).address = address;
-                address = address + length(opBytes{k});
+
+                opBytes{nOps+1} = uint8([2 255]);  %add EXIT as last operation
+                app.operation(nOps+1).address = address;
+                app.operation(nOps+1).opCodeName = 'EXIT';
+                app.operation(nOps+1).opCodeByte= 255;
+                app.operation(nOps+1).line = app.operation(nOps).line+1;
             end
 
-            opBytes{nOps+1} = uint8([2 255]);  %add EXIT as last operation
-            app.operation(nOps+1).address = address;
-            app.operation(nOps+1).opCodeName = 'EXIT';
-            app.operation(nOps+1).opCodeByte= 255;
-            app.operation(nOps+1).line = app.operation(nOps).line+1;
+            for v=1:length(app.var)
+                if ~ismember(v, app.varUsage)
+                    str = app.ListBox.String{app.var(v).line};
+                    line = app.var(v).line;
+                    formattedtext = '<FONT COLOR="purple"><small><i><u> ~unused Variable </i></u></small>';
+                    app.ListBox.String{line}=[str(1:app.strPosComment(line)-1), formattedtext, str(app.strPosComment(line):end)];
+                end
+            end
 
+            if nOps == 0
+                return
+            end
+            
             if sum(jump>0) < nLabels
-                warning('label unused')
+                %warning('label unused')
             end
 
             % count bytes from jumps to labels
@@ -545,16 +567,29 @@ classdef assembler < handle
             for j = 1:length(varOrder)
                 app.warnStr = [];
                 k = varOrder(j);
+                initStr = app.var(k).initStr;
+                
                 if app.isNumericType(app.var(k).type)
 
                     %array
                     if app.var(k).array > 0 
                         app.var(k).init = zeros(1,app.var(k).array);
-                        if ~isempty(app.var(k).initStr)
-                            if length(app.var(k).initStr)<=2
-                                app.addWarning('invalid array initializer, setting to zero'); 
+                        
+                        if ~isempty(initStr)
+                            if length(initStr)<=2 || initStr(1)~='[' || initStr(end)~=']'
+                                app.addWarning('invalid array initializer, initializing all elements to zero'); 
                             else
-                                init = str2double(regexp(app.var(k).initStr(2:end-1), '\d+','match'));
+                                initStrSep = regexp(initStr, '((0x[0-9abcdefABCDEF]+)|(\d+))','match');
+                                init = zeros(1, length(initStrSep));
+                                for i=1:length(initStrSep)
+                                    initHex = sscanf(initStrSep{i}, '0x%X');
+                                    if ~isempty(initHex)
+                                        init(i) = initHex;
+                                        %TODO:support binary type
+                                    else
+                                        init(i) = str2double(initStrSep{i});
+                                    end
+                                end
                                 if length(init)>app.var(k).array
                                     app.var(k).init = init(1:app.var(k).array);
                                     app.addWarning('ignoring extra array initializer elements'); 
@@ -568,27 +603,32 @@ classdef assembler < handle
                         end
 
                     %non-array (uninitialized)   
-                    elseif isempty(app.var(k).initStr)
+                    elseif isempty(initStr)
                        app.var(k).init = 0;
 
                     %non-array (initialized)     
                     else
-                        app.var(k).init = str2double(app.var(k).initStr);
+                        app.var(k).init = str2double(initStr);
                         if isnan(app.var(k).init) || ~isreal(app.var(k).init)
-                            initHex = sscanf(app.var(k).initStr, '0x%X');
+                            initHex = sscanf(initStr, '0x%X');
                             if length(initHex)==1
                                 app.var(k).init = initHex;
                             else
+                                %TODO:support binary type
                                 app.addWarning('invalid variable initializer, initializing to zero'); 
                                 app.var(k).init = 0;
                             end   
                         end
                     end
-                    varBytes = typecast(cast(app.var(k).init, app.var(k).type), 'uint8');
+                    varCast = cast(app.var(k).init, app.var(k).type);
+                    if ~isequal(varCast,app.var(k).init)
+                        app.addWarning('initializer value exceeds range for variable type (rollover)'); 
+                    end
+                    varBytes = typecast(varCast, 'uint8');
 
                 elseif isequal(app.var(k).type, 'string')
-                    if app.var(k).initStr(1)=='#'
-                        strLen = str2double(app.var(k).initStr(2:end));
+                    if initStr(1)=='#'
+                        strLen = str2double(initStr(2:end));
                         if isnan(strLen) || ~isreal(strLen) || strLen < 1 || strLen > 50
                             app.addWarning( 'string length initializer should be 1-50'); 
                             app.var(k).init = [];
@@ -596,26 +636,26 @@ classdef assembler < handle
                             app.var(k).init = char(zeros(1, strLen)); %all null
                         end
                     else
-                        strLen = length(app.var(k).initStr)-2;
+                        strLen = length(initStr)-2;
                         if strLen <= 0
                             app.addWarning( 'zero length string'); 
                             app.var(k).init = [];
                         elseif strLen > 50
                             app.addWarning( 'string cannot be longer than 50 characters'); 
                         else
-                            app.var(k).init = app.var(k).initStr(2:end-1);
+                            app.var(k).init = initStr(2:end-1);
                         end
                     end
 
                     varBytes = [strLen, uint8(app.var(k).init)]; %indcate string length
 
 
-               elseif isequal(app.var(k).type, 'bytearray')
-                    if length(app.var(k).initStr)<=2
+               elseif isequal(app.var(k).type, 'ba')
+                    if length(initStr)<=2
                         app.addWarning( 'zero length bytearray'); 
                         app.var(k).init = [];
                     else
-                        app.var(k).init = hex2dec(regexp(app.var(k).initStr(2:end-1), '[A-Fa-f0-9]{2}','match'));
+                        app.var(k).init = hex2dec(regexp(initStr(2:end-1), '[0-9abcdefABCDEF]{2}','match'))';
                     end
                     varBytes = uint8(app.var(k).init);
                 end
@@ -721,8 +761,13 @@ classdef assembler < handle
             app.FontSizeEditField = uicontrol(app.Figure, 'Style', 'edit',  'String', '12','Value', 12,'Position', [w-50 h-40 40 20]);
             app.FontSizeEditField.Callback = {@app.onFontSizeChanged};
             
+            app.EditButton = uicontrol(app.Figure, 'Style', 'pushbutton', 'String', 'Edit', 'Position', [w-130 h-100 120 40]);
+            app.EditButton.Callback = {@app.onEditClick};
+            app.ReassembleButton = uicontrol(app.Figure, 'Style', 'pushbutton', 'String', 'Reassemble', 'Position', [w-130 h-150 120 40]);
+            app.ReassembleButton.Callback = {@app.onReassembleClick};
+            
             if ~isempty(app.SED)
-                app.DownloadDebugButton = uicontrol(app.Figure, 'Style', 'pushbutton', 'String', 'Download & Debug', 'Position', [w-130 h-100 120 40]);
+                app.DownloadDebugButton = uicontrol(app.Figure, 'Style', 'pushbutton', 'String', 'Download & Debug', 'Position', [w-130 h-200 120 40]);
                 app.DownloadDebugButton.Callback = {@app.onDownloadDebugClick}; 
                 if isempty(app.SED.nnp)
                     app.DownloadDebugButton.Enable = 'off';
@@ -1005,7 +1050,7 @@ classdef assembler < handle
                             app.var(app.i_var).name = opStr(1:iArray-1);
                             nEl = str2double(opStr(iArray+1:end-1));
                             if isnan(nEl) || length(nEl) ~=1 || ~isreal(nEl)
-                                 app.addWarning('invalid number of elements' ); %todo change to errStr
+                                 app.addError('invalid number of elements' ); 
                             else
                                 app.var(app.i_var).array = nEl;
                             end
@@ -1425,12 +1470,13 @@ classdef assembler < handle
 
                         %bytearray literal
                         elseif length(operandStr)>2 && operandStr(1) == '!' && operandStr(end) == '!' 
-                            operand = hex2dec(regexp(operandStr(2:end-1), '[A-Fa-f0-9]{2}','match'))';
+                            operand = hex2dec(regexp(operandStr(2:end-1), '[0-9abcdefABCDEF]{2}','match'))';
                             scope = app.scopeStr2Code('literal');
                             type = app.typeStr2Code('ba');
 
                         %array literal
                         elseif length(operandStr)>2 && operandStr(1) == '[' && operandStr(end) == ']' 
+                            % TODO: support mixed hex and decimal and binary types
                             operand = str2double(regexp(operandStr(2:end-1), '\d+','match'));
                             scope = app.scopeStr2Code('literal');
                             if all(operand>0)
@@ -1817,14 +1863,30 @@ classdef assembler < handle
             app.ListBox.Position = [10 10 w-150 h-20]; %ListBox
             app.FontSizeLabel.Position = [w-130 h-45 80 20]; %FontSize Label
             app.FontSizeEditField.Position = [w-50 h-40 40 20]; %FontSize Edit
+            app.EditButton.Position = [w-130 h-100 120 40];
+            app.ReassembleButton.Position = [w-130 h-150 120 40];
             if ~isempty(app.SED)
-                app.DownloadDebugButton.Position = [w-130 h-100 120 40];
+                app.DownloadDebugButton.Position = [w-130 h-200 120 40];
             end
             
             if ~isempty(app.DBG)
                 app.DBG.redrawControls();
             end
         end %onWindowSizeChanged
+        
+        function onEditClick(app, src, event)
+            %ONEDITCLICK
+            winopen(app.file);
+        end %onEditClick
+        
+        function onReassembleClick(app, src, event)
+            %ONREASSEMBLECLICK
+            if ~isempty(app.SED)
+                app.SED.assembleScriptByID(app.scriptID);
+            else
+                msgbox('not yet supported without using scriptedit');
+            end
+        end %onReassembleClick
         
         function onDownloadDebugClick(app, src, event)
             %ONDOWNLOADDEBUGCLICK uses scriptedit app to download script to PM
