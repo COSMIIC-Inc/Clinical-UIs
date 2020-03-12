@@ -634,7 +634,7 @@ classdef assembler < handle
                     end
                     varCast = cast(app.var(k).init, app.var(k).type);
                     if ~isequal(varCast,app.var(k).init)
-                        app.addWarning('initializer value exceeds range for variable type (rollover)'); 
+                        app.addWarning('initializer value exceeds range for variable type (may saturate)'); 
                     end
                     varBytes = typecast(varCast, 'uint8');
 
@@ -1488,6 +1488,23 @@ classdef assembler < handle
 
                         %array literal
                         elseif length(operandStr)>2 && operandStr(1) == '[' && operandStr(end) == ']' 
+                            varCast = regexp(operandStr, '(\(\w+\))|(\|\w+)', 'match'); %allow (type) or |type
+                            if isempty(varCast)
+                               varCast ='uint8';
+                               app.addWarning('assuming uint8 type for literal array');
+                            else
+                                operandStr = strrep(operandStr, varCast{1}, ''); %remove cast string from operand string 
+                                if varCast{1}(1) == '|'
+                                    varCast = varCast{1}(2:end); %remove | and convert cell to string
+                                else 
+                                    varCast = varCast{1}(2:end-1); %remove ( ) and convert cell to string
+                                end
+                                if ~app.isNumericType(varCast)
+                                    varCast ='uint8';
+                                    app.addWarning('invalid literal array cast type, assuming uint8');
+                                end
+                            end
+                            
                             % support mixed hex and decimal and binary types
                             operandStrSep = regexp(operandStr(2:end-1), '((0x[0-9abcdefABCDEF]+)|(0b[01]+)|(\d+))','match');
                             operand = nan(1, length(operandStrSep));
@@ -1504,17 +1521,13 @@ classdef assembler < handle
                                     end
                                 end
                             end
-                            
+
                             scope = app.scopeStr2Code('literal');
-                            if all(operand>0)
-                                type = app.typeStr2Code('uint32');
-                                operand = typecast(uint32(operand), 'uint8');
-                            else
-                                type = app.typeStr2Code('int32'); 
-                                operand = typecast(int32(operand), 'uint8');
-                            end
-                            typemod = 0;
-                            typemodEL = app.modifierStr2Code('array'); %0x80 array modifier
+                            type = app.typeStr2Code('ba');
+                            operand = typecast(cast(operand, varCast), 'uint8');
+                            %typemod = 0;
+                            %typemodEL = app.modifierStr2Code('array'); %0x80 array modifier
+                            %typemod = app.modifierStr2Code('array'); %0x80 array modifier
 
                         else
 
@@ -1572,7 +1585,7 @@ classdef assembler < handle
                                     nodeStr = nodeStr{1}(1:end-1); %convert to string  and scrap trailing : 
                                     node = str2double(nodeStr); 
                                     if isnan(node) || node>15 ||~isreal(node)
-                                        app.warnStr = app.addWarning( 'node should be 15 or lower'); 
+                                        app.addWarning( 'node should be 15 or lower'); 
                                     end
                                 else
                                     error('should not get here, because expression already matched')
