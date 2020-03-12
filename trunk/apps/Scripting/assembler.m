@@ -319,10 +319,14 @@ classdef assembler < handle
 
             for v=1:length(app.var)
                 if ~ismember(v, app.varUsage)
-                    str = app.ListBox.String{app.var(v).line};
                     line = app.var(v).line;
-                    formattedtext = '<FONT COLOR="purple"><small><i><u> ~unused Variable </i></u></small>';
-                    app.ListBox.String{line}=[str(1:app.strPosComment(line)-1), formattedtext, str(app.strPosComment(line):end)];
+                    if isempty(line) || line > length(app.ListBox.String)
+                        warning('variable %u: %s line invalid', v, app.var(v).name);
+                    else
+                        str = app.ListBox.String{line};
+                        formattedtext = '<FONT COLOR="purple"><small><i><u> ~unused Variable </i></u></small>';
+                        app.ListBox.String{line}=[str(1:app.strPosComment(line)-1), formattedtext, str(app.strPosComment(line):end)];
+                    end
                 end
             end
 
@@ -579,15 +583,19 @@ classdef assembler < handle
                             if length(initStr)<=2 || initStr(1)~='[' || initStr(end)~=']'
                                 app.addWarning('invalid array initializer, initializing all elements to zero'); 
                             else
-                                initStrSep = regexp(initStr, '((0x[0-9abcdefABCDEF]+)|(\d+))','match');
+                                initStrSep = regexp(initStr, '((0x[0-9abcdefABCDEF]+)|(0b[01]+)|(\d+))','match');
                                 init = zeros(1, length(initStrSep));
                                 for i=1:length(initStrSep)
                                     initHex = sscanf(initStrSep{i}, '0x%X');
                                     if ~isempty(initHex)
                                         init(i) = initHex;
-                                        %TODO:support binary type
                                     else
-                                        init(i) = str2double(initStrSep{i});
+                                        initBinStr = regexp(initStrSep{i},'0b[01]+','match');
+                                        if ~isempty(initBinStr)
+                                            init(i) = bin2dec(initBinStr{1}(3:end));  %convert cell to string and remove '0b'
+                                        else
+                                            init(i) = str2double(initStrSep{i});
+                                        end
                                     end
                                 end
                                 if length(init)>app.var(k).array
@@ -614,9 +622,13 @@ classdef assembler < handle
                             if length(initHex)==1
                                 app.var(k).init = initHex;
                             else
-                                %TODO:support binary type
-                                app.addWarning('invalid variable initializer, initializing to zero'); 
-                                app.var(k).init = 0;
+                                initBinStr = regexp(initStr,'0b[01]+','match');
+                                if length(initBinStr)==1
+                                    app.var(k).init = bin2dec(initBinStr{1}(3:end));  %convert cell to string and remove '0b'
+                                else
+                                    app.addWarning('invalid variable initializer, initializing to zero'); 
+                                    app.var(k).init = 0;
+                                end
                             end   
                         end
                     end
@@ -1476,8 +1488,23 @@ classdef assembler < handle
 
                         %array literal
                         elseif length(operandStr)>2 && operandStr(1) == '[' && operandStr(end) == ']' 
-                            % TODO: support mixed hex and decimal and binary types
-                            operand = str2double(regexp(operandStr(2:end-1), '\d+','match'));
+                            % support mixed hex and decimal and binary types
+                            operandStrSep = regexp(operandStr(2:end-1), '((0x[0-9abcdefABCDEF]+)|(0b[01]+)|(\d+))','match');
+                            operand = nan(1, length(operandStrSep));
+                            for i=1:length(operandStrSep)
+                                operandHex = sscanf(operandStrSep{i}, '0x%X');
+                                if ~isempty(operandHex)
+                                    operand(i) = operandHex;
+                                else
+                                    operandBinStr = regexp(operandStrSep{i},'0b[01]+','match');
+                                    if ~isempty(operandBinStr)
+                                        operand(i) = bin2dec(operandBinStr{1}(3:end));  %convert cell to string and remove '0b'
+                                    else
+                                        operand(i) = str2double(operandStrSep{i});
+                                    end
+                                end
+                            end
+                            
                             scope = app.scopeStr2Code('literal');
                             if all(operand>0)
                                 type = app.typeStr2Code('uint32');

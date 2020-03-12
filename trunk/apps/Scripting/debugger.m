@@ -49,6 +49,7 @@ classdef debugger < handle
         RunToLineButton = []; %handle to RunToLineButton UI element
         ShowStackMonitorButton =[]; %handle to ShowStackMonitorButton UI element
         ShowGlobalMonitorButton = []; %handle to ShowGLobalMonitorButton UI element
+        ShowLiteralsCheckbox = []; %handle to ShowLiteralsCheckbox UI element
         showLiteralValues = false;
         
     end
@@ -100,6 +101,9 @@ classdef debugger < handle
             app.ShowGlobalMonitorButton = uicontrol(app.ASM.Figure, 'Style', 'pushbutton', 'String', 'Show Global Variables', 'Position', pos - [0 250 0 0]);
             app.ShowGlobalMonitorButton.Callback = {@app.onShowGlobalMonitorButtonClick};
             
+            app.ShowLiteralsCheckbox = uicontrol(app.ASM.Figure, 'Style', 'checkbox', 'String', 'Show Literals', 'Position', pos - [0 300 0 0]);
+            app.ShowLiteralsCheckbox.Callback = {@app.onShowLiteralsCheckboxClick};
+            
             app.ASM.Figure.Name = ['Debugger: ', app.ASM.scriptName, ' (scriptID:', num2str(app.ASM.scriptID), ', #', num2str(app.ASM.scriptP), ')'];
             %TODO: include network test and memory read buttons
             
@@ -114,6 +118,7 @@ classdef debugger < handle
             app.RunToLineButton.Position = pos - [0 150 0 0];
             app.ShowStackMonitorButton.Position =  pos - [0 200 0 0];
             app.ShowGlobalMonitorButton.Position =  pos - [0 250 0 0];
+            app.ShowLiteralsCheckbox.Position = pos - [0 300 0 0];
             
         end %redrawControls
         
@@ -150,7 +155,13 @@ classdef debugger < handle
             end
         end %onShowGlobalMonitorButtonClick
 
+        function onShowLiteralsCheckboxClick(app, src, event)
+            % ONSHOWLITERALSCHECKBOXCLICK
+            app.showLiteralValues = src.Value;
+        end %onShowLiteralsCheckboxClick
+        
         function onDebugEnableCheckboxClick(app, src, event)
+            % ONDEBUGENABLECHECKBOXCLICK
             if src.Value
                 disp('Enable Debugging')
                 
@@ -224,7 +235,7 @@ classdef debugger < handle
                 app.SingleStepButton.Enable = 'off';
                app.RunToLineButton.Enable = 'off';
             end
-        end
+        end %onDebugEnableCheckboxClick
         
         function showOperandResultValues(app, i_op, currentLine, operands, result)
             %SHOWOPERANDRESULTVALUES
