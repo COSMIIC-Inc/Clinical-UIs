@@ -1069,8 +1069,7 @@ classdef assembler < handle
                         end
                         if ~isempty(strVarInit)
                             app.var(app.i_var).initStr = strtrim(strVarInit);
-                            %TODO: convert init string to type and check
-                            %that number of elements match expected
+                            %Note: init string is converted to type and checked in assembleoperation
                         end
                         %<<
                         si_var = si(3);
@@ -1111,8 +1110,7 @@ classdef assembler < handle
                         end
                         if ~isempty(strVarInit)
                            app. var(app.i_var).initStr = strtrim(strVarInit);
-                            %TODO: convert init string to type and check
-                            %that number of elements match expected
+                             %Note: init string is converted to type and checked in assembleoperation
                         end
                         %<<
                         si_var = si(2);
@@ -1181,9 +1179,9 @@ classdef assembler < handle
                      maxOperands = app.opcodelist{app.operation(app.i_operation).index,4};
                      if minOperands > 0
                          if minOperands==maxOperands
-                                app.addWarning( sprintf('requires %1.0f operands', minOperands)); %TODO:change to errStr
-                        else
-                            app.addWarning( sprintf('requires %1.0f-%1.0f operands', minOperands,maxOperands)); %TODO:change to errStr
+                           app.addError( sprintf('requires %1.0f operands', minOperands)); 
+                         else
+                            app.addError( sprintf('requires %1.0f-%1.0f operands', minOperands,maxOperands));
                          end
                      end
                 end
@@ -1624,16 +1622,13 @@ classdef assembler < handle
                                                 typeEl = app.typeStr2Code(app.var(iDefinedVarEl).type);
                                                 typemodEl = app.modifierStr2Code('networkmulti'); %0xC0
                                             else
-                                                app.addError( 'Variable subindex must be a numeric scalar type'); %TODO: change to errStr
-                                                %subIndex = 255; %avoid further errors
+                                                app.addError( 'Variable subindex must be a numeric scalar type'); 
                                             end
                                         else
-                                            app.addError( 'Variable for subindex does not exist'); %TODO: change to errStr
-                                            %subIndex = 255; %avoid further errors
+                                            app.addError( 'Variable for subindex does not exist'); 
                                         end
                                     else %no subindex
-                                       app.addError( 'OD Index must be followed by .XX in hex or .(var) where var is numeric scalar variable'); %TODO: change to errStr
-                                       %subIndex = 255; %avoid further errors
+                                       app.addError( 'OD Index must be followed by .XX in hex or .(var) where var is numeric scalar variable'); 
                                     end
 
                                 end
@@ -1665,7 +1660,7 @@ classdef assembler < handle
                                         typeStr = typeStr{1}(2:end); %convert to string and scrap '|'
                                         type = app.typeStr2Code(typeStr); 
                                         if isempty(type)
-                                            app.addWarning( 'invalid type for network operand'); %TODO change to errStr
+                                            app.addWarning( 'invalid type for network operand, assuming uint8'); 
                                             type = app.typeStr2Code('uint8');
                                         end
                                     end
@@ -1673,7 +1668,7 @@ classdef assembler < handle
                                     typeStr = typeStr{1}(2:end-2); %convert to string and scrap ( )N 
                                     type = app.typeStr2Code(typeStr); 
                                     if isempty(type)
-                                        app.addWarning( 'invalid type for network operand'); %TODO change to errStr
+                                        app.addWarning( 'invalid type for network operand, assuming uint8'); 
                                         type = app.typeStr2Code('uint8');
                                     end
                                 end

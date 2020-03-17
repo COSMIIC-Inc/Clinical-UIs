@@ -43,6 +43,8 @@ classdef debugger < handle
         ASM = []; %handle to assembler 
         stackMonitor = []; %handle to variablemonitor App ('stack')
         globalMonitor = []; %handle to variablemonitor App ('global')
+        odTestApp = []; %handle to odtest App
+        readMemoryApp = []; %handle to readMemory App
 
         DebugEnableCheckbox = []; %handle to DebugEnableCheckbox UI element
         SingleStepButton = []; %handle to SingleStepButton UI element
@@ -50,6 +52,8 @@ classdef debugger < handle
         ShowStackMonitorButton =[]; %handle to ShowStackMonitorButton UI element
         ShowGlobalMonitorButton = []; %handle to ShowGLobalMonitorButton UI element
         ShowLiteralsCheckbox = []; %handle to ShowLiteralsCheckbox UI element
+        ODTestButton = []; %handle to ODTestButton UI element
+        ReadMemoryButton =[]; %handle to ReadMemoryButton UI element
         showLiteralValues = false;
         
     end
@@ -104,8 +108,13 @@ classdef debugger < handle
             app.ShowLiteralsCheckbox = uicontrol(app.ASM.Figure, 'Style', 'checkbox', 'String', 'Show Literals', 'Position', pos - [0 300 0 0]);
             app.ShowLiteralsCheckbox.Callback = {@app.onShowLiteralsCheckboxClick};
             
+            app.ODTestButton = uicontrol(app.ASM.Figure, 'Style', 'pushbutton', 'String', 'Object Dictionary', 'Position', pos - [0 350 0 0]);
+            app.ODTestButton.Callback = {@app.onODTestButtonClick};
+            
+            app.ReadMemoryButton = uicontrol(app.ASM.Figure, 'Style', 'pushbutton', 'String', 'Read Memory', 'Position', pos - [0 400 0 0]);
+            app.ReadMemoryButton.Callback = {@app.onReadMemoryButtonClick};
+            
             app.ASM.Figure.Name = ['Debugger: ', app.ASM.scriptName, ' (scriptID:', num2str(app.ASM.scriptID), ', #', num2str(app.ASM.scriptP), ')'];
-            %TODO: include network test and memory read buttons
             
         end %createDebugButtons
         
@@ -119,6 +128,8 @@ classdef debugger < handle
             app.ShowStackMonitorButton.Position =  pos - [0 200 0 0];
             app.ShowGlobalMonitorButton.Position =  pos - [0 250 0 0];
             app.ShowLiteralsCheckbox.Position = pos - [0 300 0 0];
+            app.ODTestButton.Position = pos - [0 350 0 0];
+            app.ReadMemoryButton.Position = pos - [0 400 0 0];
             
         end %redrawControls
         
@@ -131,12 +142,24 @@ classdef debugger < handle
                 delete(app.globalMonitor)
             end
             
+            %close other child apps
+             if ~isempty(app.odTestApp) && isvalid(app.odTestApp)
+                 delete(app.odTestApp)
+             end
+             if ~isempty(app.readMemoryApp) && isvalid(app.readMemoryApp)
+                 delete(app.readMemoryApp)
+             end
+            
         end %redrawControls
         
         function onShowStackMonitorButtonClick(app, src, event)
             % ONSHOWSTACKMONITORBUTTONCLICK
             if isempty(app.stackMonitor) || ~isvalid(app.stackMonitor)
-                app.stackMonitor = variablemonitor(app.nnp, 'stack', app.ASM.var);
+                try
+                    app.stackMonitor = variablemonitor(app.nnp, 'stack', app.ASM.var);
+                catch
+                    msgbox('variablemonitor.mlapp not on the path')
+                end
             else
                 %toggle visibility to bring to front
                 app.stackMonitor.UIFigure.Visible = 'off';
@@ -147,7 +170,11 @@ classdef debugger < handle
         function onShowGlobalMonitorButtonClick(app, src, event)
             % ONSHOWGLOBALMONITORBUTTONCLICK
             if isempty(app.globalMonitor) || ~isvalid(app.globalMonitor)
-                app.globalMonitor = variablemonitor(app.nnp, 'global', app.ASM.var);
+                try
+                    app.globalMonitor = variablemonitor(app.nnp, 'global', app.ASM.var);
+                catch
+                    msgbox('variablemonitor.mlapp not on the path')
+                end
             else
                 %toggle visibility to bring to front
                 app.globalMonitor.UIFigure.Visible = 'off';
@@ -160,6 +187,27 @@ classdef debugger < handle
             app.showLiteralValues = src.Value;
         end %onShowLiteralsCheckboxClick
         
+        function onODTestButtonClick(app, src, event)
+            % ONODTESTBUTTONCLICK
+            %TODO: allow multiple copies?
+            if isempty(app.odTestApp) || ~isvalid(app.odTestApp)
+                try
+                    app.odTestApp = odtest(app.nnp);
+                catch
+                    msgbox('odtest.mlapp not on the path')
+                end
+            else
+                %toggle visibility to bring to front
+                app.odTestApp.UIFigure.Visible = 'off';
+                app.odTestApp.UIFigure.Visible = 'on';
+            end
+        end %onODTestButtonClick
+        
+        function onReadMemoryButtonClick(app, src, event)
+            % ONREADMEMORYBUTTONCLICK
+            msgbox('not yet implemented')
+        end %onReadMemoryButtonClick
+        
         function onDebugEnableCheckboxClick(app, src, event)
             % ONDEBUGENABLECHECKBOXCLICK
             if src.Value
@@ -167,7 +215,10 @@ classdef debugger < handle
                 
                 app.ASM.ListBox.String = app.ASM.ListBox.UserData;  %Remove Operand/Result Values 
                 if ismember(app.ASM.scriptP, 1:25) 
-                    resp = app.nnp.nmt(7, 'AB', app.ASM.scriptP, 0); %TODO: support PDO/Alarm enabled scripts (Param2=1)
+                    %TODO: support PDO/Alarm enabled scripts (Param2=1)? 
+                    % NOTE: Not sure we need to treat them any differently, but CE does, I think so that 
+                    % script is only debugged once PDO/Alarm actually occurs
+                    resp = app.nnp.nmt(7, 'AB', app.ASM.scriptP, 0); 
                     if ~isequal(resp, hex2dec('AB'))
                         confirmNMT = false;
                     else
