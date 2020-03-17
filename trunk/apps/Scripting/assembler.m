@@ -422,6 +422,9 @@ classdef assembler < handle
             crcBytes = typecast(crc,'uint8');
             app.downloadImage = [download, crcBytes];
             app.scriptCRC = double(crc);
+            if app.scriptCRC==0 || app.scriptCRC==65535
+                msgbox(sprintf('CRC = 0x%04X. You should change the Rev or bytes in the script so that the CRC is nonzero!', app.scriptCRC)); 
+            end
             
             %output download bytes list in same format as CE for comparison
             fprintf(app.assemblerLogs.download, 'Download image...');
