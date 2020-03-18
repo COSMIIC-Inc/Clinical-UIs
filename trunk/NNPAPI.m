@@ -538,7 +538,7 @@ classdef NNPAPI < handle
                     disp('No Response from Access Point');
                 end
                 errOut = 5;
-                NNP.lastError = 'USB Timeout'
+                NNP.lastError = 'USB Timeout';
             end
         
         end
@@ -1346,7 +1346,7 @@ classdef NNPAPI < handle
                     if pktN==0
                         pktN = T;
                     end
-                    NNP.setRadio('Timeout', 251) %1s timeout for last packet
+                    NNP.setRadio('Timeout', 251); %1s timeout for last packet
                 else
                     pktN = T;
                 end
@@ -1359,7 +1359,7 @@ classdef NNPAPI < handle
                 message = [hex2dec('50'), hex2dec('1f'), SP, pktN+2, addrBytes, pktData];
                 [result, err]= NNP.transmit(7, message, counter, hex2dec('A4'));
                 if err
-                    disp(NNP.lastError)
+                    %disp(NNP.lastError)
                 end
                 if ~isequal(result, [1 0])
                     attempt = attempt + 1;
@@ -1374,7 +1374,7 @@ classdef NNPAPI < handle
                         else
                             NNP.setRadio('Timeout', settings.rxTimeout)
                             if ~isempty(h) && isvalid(h)
-                                close(h)
+                                close(h);
                             end
                             return
                         end
