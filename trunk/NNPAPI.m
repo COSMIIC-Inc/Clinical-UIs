@@ -73,7 +73,7 @@ classdef NNPAPI < handle
                 end
             end
             
-            NNP.port = serial(port, 'BaudRate', 115200);
+            NNP.port = serial(port, 'BaudRate', 115200); %230400
             try
                  fopen(NNP.port);
             catch
@@ -110,6 +110,12 @@ classdef NNPAPI < handle
                     warning(['Flush Input clearing: ' num2str(buf')]);
                 end
             end
+        end
+        
+        function refresh(NNP)
+        % REFRESH - close and reopen the serial port to correct USB issues
+            fclose(NNP.port)
+            fopen(NNP.port)
         end
         
         %% Access Point Radio Settings 
