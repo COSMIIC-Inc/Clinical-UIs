@@ -316,16 +316,18 @@ classdef assembler < handle
                 app.operation(nOps+1).opCodeByte= 255;
                 app.operation(nOps+1).line = app.operation(nOps).line+1;
             end
-
-            for v=1:length(app.var)
-                if ~ismember(v, app.varUsage)
-                    line = app.var(v).line;
-                    if isempty(line) || line > length(app.ListBox.String)
-                        warning('variable %u: %s line invalid', v, app.var(v).name);
-                    else
-                        str = app.ListBox.String{line};
-                        formattedtext = '<FONT COLOR="purple"><small><i><u> ~unused Variable </i></u></small>';
-                        app.ListBox.String{line}=[str(1:app.strPosComment(line)-1), formattedtext, str(app.strPosComment(line):end)];
+            
+            if any(structfun(@(x) ~isempty(x), app.var))
+                for v=1:length(app.var)
+                    if ~ismember(v, app.varUsage)
+                        line = app.var(v).line;
+                        if isempty(line) || line > length(app.ListBox.String)
+                            warning('variable %u: %s line invalid', v, app.var(v).name);
+                        else
+                            str = app.ListBox.String{line};
+                            formattedtext = '<FONT COLOR="purple"><small><i><u> ~unused Variable </i></u></small>';
+                            app.ListBox.String{line}=[str(1:app.strPosComment(line)-1), formattedtext, str(app.strPosComment(line):end)];
+                        end
                     end
                 end
             end
