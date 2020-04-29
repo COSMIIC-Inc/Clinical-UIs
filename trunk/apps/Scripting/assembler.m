@@ -317,7 +317,7 @@ classdef assembler < handle
                 app.operation(nOps+1).line = app.operation(nOps).line+1;
             end
             
-            if any(structfun(@(x) ~isempty(x), app.var))
+            if length(app.var)>1 || any(structfun(@(x) ~isempty(x), app.var))
                 for v=1:length(app.var)
                     if ~ismember(v, app.varUsage)
                         line = app.var(v).line;
