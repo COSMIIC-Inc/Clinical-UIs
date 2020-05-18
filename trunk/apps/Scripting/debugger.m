@@ -356,7 +356,7 @@ classdef debugger < handle
                     str = [str(1:si_operand-1), operandStr, str(ei_operand+1:end)];
                 end
                 if ~isnan(si_result)
-                    if operation(i_op).result.literal==0 || app.showLiteralValues
+                    if isequal(operation(i_op).result.literal, 0) || app.showLiteralValues
                         resultStr = str((si_result:ei_result)+offset);
                         typeStr = assembler.typeCode2Str(bitand(operation(i_op).result.typeScope, 15));
                         if assembler.isNumericType(typeStr)
