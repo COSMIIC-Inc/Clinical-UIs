@@ -589,24 +589,34 @@ classdef debugger < handle
                             done = true;
                         end
                     else
-                        getLabel = operation(i_op).result.literal;
-                        [isLabel, iLabel] = ismember(getLabel, label(:,1));
-                        if isLabel
-                            %find first operation following label
-                            for j = length(operation):-1:1
-                                if operation(j).line >= label{iLabel,2}
-                                    nextLine = operation(j).line;
-                                else
-                                    break;
-                                end
-                            end
-                            if nextLine <= length(app.ASM.ListBox.String)
-                                app.ASM.ListBox.Value = nextLine;
-                            else
-                                done = true;
-                            end
+                        if isempty(operation(i_op).result) %jump to end
+                            app.ASM.ListBox.Value = length(app.ASM.ListBox.String);
+                            done = true;
                         else
-                            disp('Could not find Label!')
+                            getLabel = operation(i_op).result.literal;
+                        
+                            [isLabel, iLabel] = ismember(getLabel, label(:,1));
+                            if isLabel
+                                %find first operation following label
+                                nextLine = length(app.ASM.ListBox.String);
+                                for j = length(operation):-1:1
+                                    if operation(j).line >= label{iLabel,2}
+                                        nextLine = operation(j).line;
+                                    else
+                                        break;
+                                    end
+                                end
+                                if nextLine <= length(app.ASM.ListBox.String)
+                                    app.ASM.ListBox.Value = nextLine;
+                                    if nextLine > operation(end).line %no more operations
+                                        done = true;
+                                    end
+                                else
+                                    done = true;
+                                end
+                            else
+                                disp('Could not find Label!')
+                            end
                         end
                     end
                 end

@@ -345,7 +345,7 @@ classdef assembler < handle
             for k=1:length(jump)
                 if jump(k)>0
                     %find first operation following label (may be on a following line)
-                    jumpOp = 0;
+                    jumpOp = length(app.operation);
                     for j = length(app.operation):-1:1
                         if app.operation(j).line >= jump(k)
                             jumpOp = j;
@@ -353,6 +353,7 @@ classdef assembler < handle
                             break;
                         end
                     end
+                        
                     sumBytes = 0; 
                     if jumpOp>k
                         jumpDir = 0; %forward
@@ -1296,18 +1297,18 @@ classdef assembler < handle
                   si_operand, ei_operand, si_unknown, ei_unknown, si_unused, ei_unused] ...
                         = app.parseOperation(app.SL{i}(startparse:endparse), i,strVarInit, strResult);
                 if startparse > 1 %shift start/end indices
-                    si_opcode = si_opcode + startparse;
-                    ei_opcode = ei_opcode + startparse; 
-                    si_vartypescope = si_vartypescope + startparse;
-                    ei_vartypescope = ei_vartypescope + startparse;
-                    si_var = si_var + startparse;
-                    ei_var = ei_var + startparse;
-                    si_operand = si_operand + startparse;
-                    ei_operand = ei_operand + startparse;
-                    si_unknown = si_unknown + startparse;
-                    ei_unknown = ei_unknown + startparse;
-                    si_unused = si_unused + startparse;
-                    ei_unused = ei_unused + startparse;
+                    si_opcode = si_opcode + startparse - 1;
+                    ei_opcode = ei_opcode + startparse - 1; 
+                    si_vartypescope = si_vartypescope + startparse - 1;
+                    ei_vartypescope = ei_vartypescope + startparse - 1;
+                    si_var = si_var + startparse - 1;
+                    ei_var = ei_var + startparse - 1;
+                    si_operand = si_operand + startparse - 1;
+                    ei_operand = ei_operand + startparse - 1;
+                    si_unknown = si_unknown + startparse - 1;
+                    ei_unknown = ei_unknown + startparse - 1;
+                    si_unused = si_unused + startparse - 1;
+                    ei_unused = ei_unused + startparse - 1;
                 end
 
 
