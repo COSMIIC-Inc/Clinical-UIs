@@ -1,6 +1,6 @@
 classdef NNPAPI < handle
     %NNPAPI Interface to the NNP via the AccessPoint
-    % Updated: 20190430 JML
+    % Updated: 20200521 JML
     
     properties (Access = private)
         cancelRead = false;
@@ -73,7 +73,7 @@ classdef NNPAPI < handle
                 end
             end
             
-            NNP.port = serial(port, 'BaudRate', 115200); %230400
+            NNP.port = serial(port, 'BaudRate', 230400); %changed from 115200.  Works with USB and direct RS-232 version
             try
                  fopen(NNP.port);
             catch
@@ -1503,6 +1503,12 @@ classdef NNPAPI < handle
                  resp = NNP.nmt(7, '93', 0);
              end
             success = (resp == hex2dec('93'));
+        end
+        
+        function success = powerOff(NNP)
+        % POWEROFF -power off PM
+            resp = NNP.nmt(7, '9E', 0);
+            success = (resp == hex2dec('9E'));
         end
         
         function rev = getSwRev(NNP, node)    
