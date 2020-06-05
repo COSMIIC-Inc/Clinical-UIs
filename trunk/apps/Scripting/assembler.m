@@ -589,7 +589,7 @@ classdef assembler < handle
                             if length(initStr)<=2 || initStr(1)~='[' || initStr(end)~=']'
                                 app.addWarning('invalid array initializer, initializing all elements to zero'); 
                             else
-                                initStrSep = regexp(initStr, '((0x[0-9abcdefABCDEF]+)|(0b[01]+)|(\d+))','match');
+                                initStrSep = regexp(initStr, '((0x[0-9abcdefABCDEF]+)|(0b[01]+)|(-*\d+))','match');
                                 init = zeros(1, length(initStrSep));
                                 for i=1:length(initStrSep)
                                     initHex = sscanf(initStrSep{i}, '0x%X');
