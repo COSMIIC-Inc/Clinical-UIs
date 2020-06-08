@@ -1203,8 +1203,8 @@ classdef assembler < handle
                         app.warnStr = [];
                         app.addWarning('opcode requires a result - ignoring operation'); 
                         %ignore this operation
-                        si_unknown = startparse;
-                        ei_unknown = endparse;
+                        si_unknown = 1;
+                        ei_unknown = length(app.SL{app.operation(app.i_operation).line});
                         si_unused = [];
                         ei_unused = [];
                         si_operand = [];
