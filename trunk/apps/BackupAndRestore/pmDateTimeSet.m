@@ -1,4 +1,4 @@
-function result = setPMDateTime(nnp)
+function result = pmDateTimeSet(nnp)
 % set the data and time in the PM
 % 1) NMT: Halt RTC so  DateTime_Date and DateTime_Time (2004.1-2) don't 
 % update after trying to set them in step 2 and 3,  NMT 0x97

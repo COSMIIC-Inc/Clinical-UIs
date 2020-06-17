@@ -2,3 +2,10 @@ Clinical Suite notes
 Open this to take notes of what I want to change as I work with the suite.
 
 in MES recording app, need to add Netork On button for accelerometers, since I turn Off the network when stopping the emg recording
+EMG recording, need to disable the stim on/off button while stimulating because it the recording is too fast to allow a stimulation on/off command.
+
+Add Get RTC so that I can see what the clock time is currently.
+
+Add script editor buttons
+Add network buttons to main menu
+
