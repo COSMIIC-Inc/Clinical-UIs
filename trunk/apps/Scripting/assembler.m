@@ -22,6 +22,8 @@ classdef assembler < handle
     %  1. This file uses HTML formatting to color code/bold/italicize text using deprecated uicontrol ListBox
     %  2. This is not built in AppDesigner, because there is not yet support for HTML 
     %     formatting within UIListBoxes or UITables
+    % RLH 20200709
+    % Made path for assembler logs (openAssemblerLogs(app)) to be a subfolder of the script file location, rather than the current Matlab path.
     
     properties  (Constant) 
        %This is accessible without creating an insance of the class!
@@ -802,13 +804,24 @@ classdef assembler < handle
         
         function openAssemblerLogs(app)
              % OPENASSEMBLERLOGS Create Assembler Log folder, subfolder with script name, and log files
-            if ~isfolder('AssemblerLogs')
-                mkdir('AssemblerLogs');
+             [scriptPath,~,~]=fileparts(app.file); % get the path of the script file
+             assemblerLogFolder=[scriptPath,'\AssemblerLogs']; % relative path for assember logs
+             if ~isfolder(assemblerLogFolder)
+                mkdir(scriptPath,'AssemblerLogs');
+             end
+             if ~isfolder([assemblerLogFolder,'\', app.scriptName])
+                mkdir(assemblerLogFolder,app.scriptName);
             end
-            if ~isfolder(['AssemblerLogs\' app.scriptName])
-                mkdir(['AssemblerLogs\' app.scriptName]);
-            end
-            path = ['AssemblerLogs\' app.scriptName '\'];
+            path = [assemblerLogFolder,'\', app.scriptName,'\']; % relative pathway for log files
+            % the code below put the assemberlog files in the current pathway, rather than the path for the selected
+            % script. Does this need to be an option?  
+%             if ~isfolder('AssemblerLogs')
+%                 mkdir('AssemblerLogs');
+%             end
+%             if ~isfolder(['AssemblerLogs\' app.scriptName])
+%                 mkdir(['AssemblerLogs\' app.scriptName]);
+%             end
+%             path = ['AssemblerLogs\' app.scriptName '\'];
 
             app.assemblerLogs.operations = fopen([path 'operations.txt'], 'w');
             app.assemblerLogs.vartables = fopen([path 'variables.txt'], 'w');
