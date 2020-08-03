@@ -105,7 +105,7 @@ classdef NNPAPI < handle
         function flushInput(NNP)
         % FLUSHINPUT - Clears any bytes available in the port buffer
             if NNP.port.BytesAvailable
-                buf = fread(NNP.port, NNP.port.BytesAvailable);
+                buf = NNP.tryfread(NNP.port.BytesAvailable);
                 if NNP.verbose > 0
                     warning(['Flush Input clearing: ' num2str(buf')]);
                 end
@@ -114,26 +114,60 @@ classdef NNPAPI < handle
         
         function refresh(NNP)
         % REFRESH - close and reopen the serial port to correct USB issues
-            fclose(NNP.port)
-            fopen(NNP.port)
+            try
+                fclose(NNP.port);
+                fopen(NNP.port);
+            catch
+                msgbox(sprintf('Failed to refresh Access Point port (%s).', NNP.port.Port));
+                NNP.lastError = 'Serial Port';
+            end
         end
         
+        function tryfwrite(NNP, data, type)
+            try
+                NNP.flushInput();
+                fwrite(NNP.port, data, type);
+            catch
+                userResp = questdlg([sprintf('Failed to write data on Access Point port (%s).', NNP.port.Port),...
+                         sprintf('\n\nDo you want to refresh the port?'),...
+                         sprintf('\n\nNote: You may need to unplug and replug the AccessPoint prior to hitting Yes to resolve some issues')],...
+                         'Port Write Error'); 
+                NNP.lastError = 'Serial Port';
+                if isequal(userResp, 'Yes')
+                    NNP.refresh;
+                end
+            end
+        end
+        
+        function data = tryfread(NNP, n, type)
+            try
+                data = fread(NNP.port, n, type);
+            catch
+                userResp = questdlg([sprintf('Failed to read data on Access Point port (%s).' , NNP.port.Port),...
+                         sprintf('\n\nDo you want to refresh the port?'),...
+                         sprintf('\n\nNote: You may need to unplug and replug the AccessPoint prior to hitting Yes to resolve some issues')],...
+                         'Port Read Error'); 
+                NNP.lastError = 'Serial Port';
+                if isequal(userResp, 'Yes')
+                    NNP.refresh;
+                end
+                data = [];
+            end
+        end
         %% Access Point Radio Settings 
         
         function settings = getRadioSettings(NNP)
         % GETRADIOSETTINGS - Reads AccessPoint Radio Settings
             settings = []; %initialize output
-            
-            NNP.flushInput();
-            
-            fwrite(NNP.port, uint8([255 73 3]), 'uint8');
-            
+
+            NNP.tryfwrite( uint8([255 73 3]), 'uint8');
+
             t = tic;
             while NNP.port.BytesAvailable < 10 && toc(t)< NNP.timeout
                 %delay loop
             end
             if NNP.port.BytesAvailable 
-                resp = fread(NNP.port, NNP.port.BytesAvailable, 'uint8');
+                resp = NNP.tryfread(NNP.port.BytesAvailable, 'uint8');
                 if resp(1)==255 && length(resp)==resp(3) && length(resp)==10 && resp(2) == 6
                     settings.addrAP  = resp(4);
                     settings.addrPM  = resp(5);
@@ -236,7 +270,6 @@ classdef NNPAPI < handle
         
 
             settings = []; %initialize output
-            NNP.flushInput();
 
             %optional parameter to make settings temporary.  
             if nargin < 2
@@ -252,7 +285,7 @@ classdef NNPAPI < handle
             end
 
 
-            fwrite(NNP.port, uint8([255 cmd 10 ...
+            NNP.tryfwrite(uint8([255 cmd 10 ...
                            settingsIn.addrAP...
                            settingsIn.addrPM ...
                            settingsIn.chan ...
@@ -266,7 +299,7 @@ classdef NNPAPI < handle
                 %delay loop
             end
             if NNP.port.BytesAvailable 
-                resp = fread(NNP.port, NNP.port.BytesAvailable, 'uint8');
+                resp = NNP.tryfread(NNP.port.BytesAvailable, 'uint8');
                 if resp(1)==255 && length(resp)==resp(3) && length(resp)==10 && resp(2) == 6
                     settings.addrAP  = resp(4);
                     settings.addrPM  = resp(5);
@@ -288,17 +321,15 @@ classdef NNPAPI < handle
         % [sw, hw] = GETAPREV(NNP)
             sw = []; %initialize output
             hw = [];
-            
-            NNP.flushInput();
-            
-            fwrite(NNP.port, uint8([255 32 3]), 'uint8');
+                       
+            NNP.tryfwrite(uint8([255 32 3]), 'uint8');
             
             t = tic;
             while NNP.port.BytesAvailable < 7 && toc(t)< NNP.timeout
                 %delay loop
             end
             if NNP.port.BytesAvailable 
-                resp = fread(NNP.port, NNP.port.BytesAvailable, 'uint8');
+                resp = NNP.tryfread(NNP.port.BytesAvailable, 'uint8');
                 if resp(1)==255 && length(resp)==resp(3) && length(resp)==7 && resp(2) == 6
                     sw  = double(resp(4)) + double(resp(5)*256);
                     hw  = double(resp(6)) + double(resp(7)*256);
@@ -340,15 +371,14 @@ classdef NNPAPI < handle
                 netID = 1;
             end
 
-            NNP.flushInput();
-            fwrite(NNP.port, uint8([255, 71, length(data)+7  protocol, counter, netID, node, data]), 'uint8');
+            NNP.tryfwrite(uint8([255, 71, length(data)+7  protocol, counter, netID, node, data]), 'uint8');
 
             t = tic;
             while NNP.port.BytesAvailable == 0 && toc(t)< NNP.timeout
                 %delay loop
             end
             if NNP.port.BytesAvailable
-                resp = uint8(fread(NNP.port, NNP.port.BytesAvailable, 'uint8')');
+                resp = uint8(NNP.tryfread(NNP.port.BytesAvailable, 'uint8')');
                 if NNP.verbose == 2
                     disp(['Response: ' num2str(resp,' %02X')]);
                 end
@@ -472,15 +502,14 @@ classdef NNPAPI < handle
                 cmd = hex2dec(cmd); 
             end
             
-            NNP.flushInput();
-            fwrite(NNP.port, uint8([255, 71, length(data)+4  cmd, data]), 'uint8');
+            NNP.tryfwrite(uint8([255, 71, length(data)+4  cmd, data]), 'uint8');
 
             t = tic;
             while NNP.port.BytesAvailable == 0 && toc(t)< NNP.timeout
                 %delay loop
             end
             if NNP.port.BytesAvailable
-                resp = uint8(fread(NNP.port, NNP.port.BytesAvailable, 'uint8')');
+                resp = uint8(NNP.tryfread(NNP.port.BytesAvailable, 'uint8')');
                 if NNP.verbose == 2
                     disp(['Response: ' num2str(resp,' %02X')]);
                 end
