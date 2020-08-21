@@ -33,6 +33,13 @@ for n=nodes
             %    NOTE: Cannot use block read for any index that has arrays included
             if ~isempty(PGver)
                 StrA=[StrA sprintf('\n**** PG Node %d, Version %d *******\n',n,PGver)];
+                if PGver>166 % Accel Setting added in version 167
+                     StrA=[StrA sprintf('\n2012 \n')];
+                     rx=nnp.read(n,'2012',1,1,'uint8'); % Accel settings
+                    if ~isempty(rx)
+                        StrA=[StrA sprintf('1 Accel Settings     %d\n',rx)];
+                    end
+                end
                 if PGver<154  %146 included in this case
                     StrA=[StrA sprintf('\n2800 \n')];
                     rx=nnp.read(n,'2800',1,1,'uint8'); %Setup Timing [4]
@@ -172,6 +179,13 @@ for n=nodes
             PGver=double(nnp.read(n,'1018',3,1,'uint32'));
             if ~isempty(PGver)
                 StrA=[StrA sprintf('\n**** BP Node %d, Version %d *******\n',n,PGver)];
+                if PGver>134 % Accel Setting added in version 135
+                     StrA=[StrA sprintf('\n2012 \n')];
+                     rx=nnp.read(n,'2012',1,1,'uint8'); % Accel settings
+                    if ~isempty(rx)
+                        StrA=[StrA sprintf('1 Accel Settings     %d\n',rx)];
+                    end
+                end
                 StrA=[StrA sprintf('\n2800 \n')];
                 rx=nnp.read(n,'2800',1,1,'uint8'); %Sync Timing [23]
                 if ~isempty(rx)
