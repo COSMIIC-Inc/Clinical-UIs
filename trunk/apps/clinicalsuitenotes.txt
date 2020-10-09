@@ -1,6 +1,10 @@
 Clinical Suite notes
 Open this to take notes of what I want to change as I work with the suite.
-Add option to read RTC from PM.  That way I can verify if clock set correctly after I set it.
+**General
+
+Use getStatus window from netscanner elsewhere in the suite.
+
+**Phone app emulation
 Add battery levels to phone app
 Add network On display to phone app
 Add refresh button
@@ -8,23 +12,26 @@ Add refresh continually button
 Add display of command,pattern, etc.  Since I would be reading the same block as 
 the phone app, might as well set all the same displays that are read in the phone app.
 
-Use getStatus window from netscanner elsewhere in the suite.
-
-Remote module setup, make table editable to be able to set
-
+Remote module display
 add sync period to remote module display for reference
-add accel setting to rmParameters
+
+**Remote Module Setup
+x Remote module setup, make table editable to be able to set
+
+add accel setting to rmParameters, 2012.1
 add accel setting to remote display for bp>134, PG>164
-How best to rearrange order of modules? 
+How best to rearrange order stim timing PG modules? 
 Swap A and B
 Shift timing R or L?  Just shift SyncTiming and SyncPush
 Is sync period read with BP and/or PG settings?
-Is it every written or just for reference?
+Is it ever written or just for reference?
 
-PDO config - add option to read current configurations
-Write PM RPDO does not give message to confirm
-That app does not yet have dmessage function. Add that and use an look at response 
-for each of the write statements.  Write statements should be 0 if successful, [] if not.
-Sum number of errors and return fail if not zero errors.
+**PDO config
+PDO config - add option to read current configurations and compare
 
-netscannerf.mlapp - need to remove last comma at end of each line, otherwise imported as extra column
+** Netscanner
+x netscannerf.mlapp - need to remove last comma at end of each line, otherwise imported as extra column
+x if VIN not read then need to leave blank
+
+** Needed Parameters
+Include place to set ramp speeds and delays for trunk ramp in pattern configurations
