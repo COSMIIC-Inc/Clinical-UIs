@@ -4,7 +4,7 @@ function pmDateString = pmDateTimeGet(nnp)
 % % read data and time
 resp=nnp.read(7,'2004',1,'uint32');
 if isempty(resp)
-        result=1;% error
+        pmDateString=1;% error
         disp('Error reading');
         return;
 else
@@ -12,7 +12,7 @@ else
 end
 resp=nnp.read(7,'2004',2,'uint32');
 if isempty(resp)
-        result=1;% error
+        pmDateString=1;% error
         disp('Error reading time');
         return;
 else
@@ -32,6 +32,7 @@ pmDay=bitand(pmDate8(1),0b1111); % DOM day of month.  4 bits
 pmMonth=bitand(pmDate8(2),0b1111); % month, 4 bits
 pmYear=bitand(pmDate16(2), 0b111111111111);  % year, 12 bits
 
+
 % Convert pcTime to time elements
 % time is four bytes
 % byte 0 = sec, 6 bits
@@ -48,6 +49,11 @@ pmDOW=pmTime8(4); % DOW day of week, 4 bits,
 % % Assemble into string
 % datevector=year, month, day, hour, minute, and second 
 pmDateVector=double([pmYear, pmMonth, pmDay, pmHour,pmMin,pmSec]);
+% the year has to be >= 1500 or the string returns six rows
+if pmYear<2000
+    pmDateString=sprintf('Invalid, datevec=[%d,%d,%d,%d,%d,%d]',pmDateVector);
+else
 pmDateString = datestr(pmDateVector,'mmmm dd, yyyy, HH:MM:SS.FFF AM');
+end
 
 
