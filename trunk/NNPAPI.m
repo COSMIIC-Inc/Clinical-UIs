@@ -143,14 +143,14 @@ classdef NNPAPI < handle
             try
                 data = fread(NNP.port, n, type);
             catch
-                userResp = questdlg([sprintf('Failed to read data on Access Point port (%s).' , NNP.port.Port),...
-                         sprintf('\n\nDo you want to refresh the port?'),...
-                         sprintf('\n\nNote: You may need to unplug and replug the AccessPoint prior to hitting Yes to resolve some issues')],...
-                         'Port Read Error'); 
-                NNP.lastError = 'Serial Port';
-                if isequal(userResp, 'Yes')
-                    NNP.refresh;
-                end
+%                 userResp = questdlg([sprintf('Failed to read data on Access Point port (%s).' , NNP.port.Port),...
+%                          sprintf('\n\nDo you want to refresh the port?'),...
+%                          sprintf('\n\nNote: You may need to unplug and replug the AccessPoint prior to hitting Yes to resolve some issues')],...
+%                          'Port Read Error'); 
+%                 NNP.lastError = 'Serial Port';
+%                 if isequal(userResp, 'Yes')
+%                     NNP.refresh;
+%                 end
                 data = [];
             end
         end
@@ -921,7 +921,11 @@ classdef NNPAPI < handle
             
             %configure wake interval on Access Point
             settings = NNP.getRadioSettings();
-            if settings.worInt ~= wakeInterval
+            if isempty(settings) 
+                success = false;
+                warning('worOn: failed to read radio settings')
+                return
+            elseif settings.worInt ~= wakeInterval
                 settings.worInt = wakeInterval;
                 settingsOut = NNP.setRadioSettings(settings, false);
                 if NNP.verbose > 0 && settingsOut.worInt ~= wakeInterval
@@ -954,15 +958,21 @@ classdef NNPAPI < handle
                 success = true;
             else
                 success = false;
+                warning('worOff: failed to confirm PM disabled WOR.  Leaving WOR enabled on AP')
+                return;
             end
             %eliminate wake interval on Access Point
             settings = NNP.getRadioSettings();
-                
-            if ~isempty(settings) && settings.worInt ~= 0
+            if isempty(settings) 
+                success = false;
+                warning('worOff: failed to read radio settings')
+                return    
+            elseif settings.worInt ~= 0
                 settings.worInt = 0;
                 settingsOut = NNP.setRadioSettings(settings, false);
                 if NNP.verbose > 0 && settingsOut.worInt ~= 0
                     warning(['wakeInterval set to:', num2str(settingsOut.worInt)])
+                    success = false;
                 end
             end
 
