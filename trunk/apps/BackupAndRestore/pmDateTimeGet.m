@@ -28,7 +28,7 @@ pause(.4);
 pmDate16=typecast(pmDate,'uint16'); %first need 2nd word for year
 pmDate8=typecast(pmDate16,'uint8'); % divide into bytes
 % could assume that unused bits are 0, but added for clarity
-pmDay=bitand(pmDate8(1),0b1111); % DOM day of month.  4 bits
+pmDay=bitand(pmDate8(1),0b11111); % DOM day of month.  5 bits
 pmMonth=bitand(pmDate8(2),0b1111); % month, 4 bits
 pmYear=bitand(pmDate16(2), 0b111111111111);  % year, 12 bits
 

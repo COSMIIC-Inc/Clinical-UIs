@@ -10,7 +10,7 @@ function result = pmDateTimeSet(nnp)
 pcTime=datetime('now');
 % convert these into the components needed for PM
 % date is four bytes
-% byte 0 = DOM day of month.  4 bits
+% byte 0 = DOM day of month.  5 bits
 % byte 1 = month, 4 bits
 % bytes 2-3 = year, 12 bits
 pmMonth=uint8(month(pcTime));
