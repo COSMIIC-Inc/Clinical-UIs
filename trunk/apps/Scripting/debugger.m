@@ -636,11 +636,11 @@ classdef debugger < handle
             
             disp('Run to Line')
             line = app.ASM.ListBox.Value;
-            app.onDebugSingleStep(src, event);
+            app.onSingleStepButtonClick(src, event);
             h = msgbox('May run indefinitely - Hit OK to Cancel');
             while app.ASM.ListBox.Value~= line && isgraphics(h)
                 drawnow
-                app.onDebugSingleStep(src, event);
+                app.onSingleStepButtonClick(src, event);
                 if app.ASM.ListBox.Value == length(app.ASM.ListBox.String)
                     break;
                 end
