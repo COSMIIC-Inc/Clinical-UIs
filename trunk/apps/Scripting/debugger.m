@@ -49,12 +49,17 @@ classdef debugger < handle
         DebugEnableCheckbox = []; %handle to DebugEnableCheckbox UI element
         SingleStepButton = []; %handle to SingleStepButton UI element
         RunToLineButton = []; %handle to RunToLineButton UI element
+        RunToEndButton = []; %handle to RunToEndButton UI element
+        RunToEndXEdit = []; %handle to RunToEndX EditField UI element
+        RunToEndXLabel = []; %handle to RunToEndX Text UI element
         ShowStackMonitorButton =[]; %handle to ShowStackMonitorButton UI element
         ShowGlobalMonitorButton = []; %handle to ShowGLobalMonitorButton UI element
+        ResetGlobalsButton = []; %handle to ResetGlobalsButton UI element
         ShowLiteralsCheckbox = []; %handle to ShowLiteralsCheckbox UI element
         ODTestButton = []; %handle to ODTestButton UI element
         ReadMemoryButton =[]; %handle to ReadMemoryButton UI element
         showLiteralValues = false;
+        verbose = 0;
         
     end
     
@@ -86,6 +91,12 @@ classdef debugger < handle
             app.onDebugEnableCheckboxClick(app.DebugEnableCheckbox, []);
         end %disableDebug
         
+        function enableDebug(app)
+            %ENABLEDEBUG
+            app.DebugEnableCheckbox.Value = true;
+            app.onDebugEnableCheckboxClick(app.DebugEnableCheckbox, []);
+        end %enableDebug
+        
         function createDebugButtons(app)
             % CREATEDEBUGBUTTONS
             pos = app.ASM.DownloadDebugButton.Position;
@@ -99,19 +110,28 @@ classdef debugger < handle
             app.RunToLineButton = uicontrol(app.ASM.Figure, 'Style', 'pushbutton', 'String', 'Run to Line', 'Position', pos - [0 150 0 0]);
             app.RunToLineButton.Callback = {@app.onRunToLineButtonClick};
             
-            app.ShowStackMonitorButton = uicontrol(app.ASM.Figure, 'Style', 'pushbutton', 'String', 'Show Stack Variables', 'Position', pos - [0 200 0 0]);
+            app.RunToEndButton = uicontrol(app.ASM.Figure, 'Style', 'pushbutton', 'String', 'Run to End', 'Position', pos - [0 200 30 0]);
+            app.RunToEndButton.Callback = {@app.onRunToEndButtonClick};
+            
+            app.RunToEndXEdit = uicontrol(app.ASM.Figure, 'Style', 'edit', 'String', '1', 'Position', pos - [30-pos(3) 185 pos(3)-30 pos(4)/2]);
+            app.RunToEndXLabel = uicontrol(app.ASM.Figure, 'Style', 'text', 'String', 'Times', 'Position', pos - [30-pos(3) 205 pos(3)-30 pos(4)/2]);
+            
+            app.ShowStackMonitorButton = uicontrol(app.ASM.Figure, 'Style', 'pushbutton', 'String', 'Show Stack Variables', 'Position', pos - [0 250 0 0]);
             app.ShowStackMonitorButton.Callback = {@app.onShowStackMonitorButtonClick};
             
-            app.ShowGlobalMonitorButton = uicontrol(app.ASM.Figure, 'Style', 'pushbutton', 'String', 'Show Global Variables', 'Position', pos - [0 250 0 0]);
+            app.ShowGlobalMonitorButton = uicontrol(app.ASM.Figure, 'Style', 'pushbutton', 'String', 'Show Global Variables', 'Position', pos - [0 300 0 0]);
             app.ShowGlobalMonitorButton.Callback = {@app.onShowGlobalMonitorButtonClick};
             
-            app.ShowLiteralsCheckbox = uicontrol(app.ASM.Figure, 'Style', 'checkbox', 'String', 'Show Literals', 'Position', pos - [0 300 0 0]);
+            app.ResetGlobalsButton = uicontrol(app.ASM.Figure, 'Style', 'pushbutton', 'String', 'Reset Global Variables', 'Position', pos - [0 350 0 0]);
+            app.ResetGlobalsButton.Callback = {@app.onResetGlobalsButtonClick};
+            
+            app.ShowLiteralsCheckbox = uicontrol(app.ASM.Figure, 'Style', 'checkbox', 'String', 'Show Literals', 'Position', pos - [0 400 0 0]);
             app.ShowLiteralsCheckbox.Callback = {@app.onShowLiteralsCheckboxClick};
             
-            app.ODTestButton = uicontrol(app.ASM.Figure, 'Style', 'pushbutton', 'String', 'Object Dictionary', 'Position', pos - [0 350 0 0]);
+            app.ODTestButton = uicontrol(app.ASM.Figure, 'Style', 'pushbutton', 'String', 'Object Dictionary', 'Position', pos - [0 450 0 0]);
             app.ODTestButton.Callback = {@app.onODTestButtonClick};
             
-            app.ReadMemoryButton = uicontrol(app.ASM.Figure, 'Style', 'pushbutton', 'String', 'Read Memory', 'Position', pos - [0 400 0 0]);
+            app.ReadMemoryButton = uicontrol(app.ASM.Figure, 'Style', 'pushbutton', 'String', 'Read Memory', 'Position', pos - [0 500 0 0]);
             app.ReadMemoryButton.Callback = {@app.onReadMemoryButtonClick};
             
             app.ASM.Figure.Name = ['Debugger: ', app.ASM.scriptName, ' (scriptID:', num2str(app.ASM.scriptID), ', #', num2str(app.ASM.scriptP), ')'];
@@ -125,11 +145,15 @@ classdef debugger < handle
             app.DebugEnableCheckbox.Position = pos - [0 50 0 0];
             app.SingleStepButton.Position = pos - [0 100 0 0];
             app.RunToLineButton.Position = pos - [0 150 0 0];
-            app.ShowStackMonitorButton.Position =  pos - [0 200 0 0];
-            app.ShowGlobalMonitorButton.Position =  pos - [0 250 0 0];
-            app.ShowLiteralsCheckbox.Position = pos - [0 300 0 0];
-            app.ODTestButton.Position = pos - [0 350 0 0];
-            app.ReadMemoryButton.Position = pos - [0 400 0 0];
+            app.RunToEndButton.Position = pos - [0 200 30 0];
+            app.RunToEndXEdit.Position = pos - [30-pos(3) 185 pos(3)-30 pos(4)/2];
+            app.RunToEndXLabel.Position = pos - [30-pos(3) 205 pos(3)-30 pos(4)/2];
+            app.ShowStackMonitorButton.Position =  pos - [0 250 0 0];
+            app.ShowGlobalMonitorButton.Position =  pos - [0 300 0 0];
+            app.ResetGlobalsButton.Position =  pos - [0 350 0 0];
+            app.ShowLiteralsCheckbox.Position = pos - [0 400 0 0];
+            app.ODTestButton.Position = pos - [0 450 0 0];
+            app.ReadMemoryButton.Position = pos - [0 500 0 0];
             
         end %redrawControls
         
@@ -182,6 +206,11 @@ classdef debugger < handle
             end
         end %onShowGlobalMonitorButtonClick
 
+        function onResetGlobalsButtonClick(app, src, event)
+            % ONRESETGLOBALSBUTTONCLICK
+            app.nnp.nmt(7,'A7',app.ASM.scriptID); %Reset globals for this script
+        end %onResetGlobalsButtonClick
+        
         function onShowLiteralsCheckboxClick(app, src, event)
             % ONSHOWLITERALSCHECKBOXCLICK
             app.showLiteralValues = src.Value;
@@ -221,27 +250,32 @@ classdef debugger < handle
                     resp = app.nnp.nmt(7, 'AB', app.ASM.scriptP, 0); 
                     if ~isequal(resp, hex2dec('AB'))
                         confirmNMT = false;
+                        disp(['No Enable NMT Response: ', app.nnp.lastError])
                     else
                         confirmNMT = true;
                     end
                     resp = app.nnp.read(7, '1f52', 1, 'uint8', 2);
                     if length(resp)==2
-                        control = resp(1);
+                        %control = resp(1);
                         status = resp(2);
                         if status > 0
                             if status == 22 || status ==23 
-                                msgbox('May not have enabled script debugging ')
+                                msgbox(['May not have enabled script debugging.'...
+                                    'If single stepping fails, disable and reenable script debugging '], 'Script Debugger')
                             end
                             if status < length(app.scripterrors)
-                                disp(['Runtime Error: ' app.scripterrors{status+1}])
+                                msgbox(['Runtime Error: ' app.scripterrors{status+1}], 'Script Debugger')
+                                return
                             else
-                                disp(['Unknown Runtime Error: ' num2str(status)])
+                                msgbox(['Unknown Runtime Error: ' num2str(status)], 'Script Debugger')
+                                return
                             end
                         end
                     else
                         if ~confirmNMT
-                            msgbox('Could not confirm NMT')
-                            disp('Could not confirm NMT') %TODO: remove
+                            msgbox('Could not enable Script Debugging.', 'Script Debugger')
+                            %disp('Could not confirm NMT') %TODO: remove
+                            return
                         end
                     end
                     operation = app.ASM.operation;
@@ -250,43 +284,61 @@ classdef debugger < handle
                     end
                     app.SingleStepButton.Enable = 'on';
                     app.RunToLineButton.Enable = 'on';
+                    app.RunToEndButton.Enable = 'on';
+                    app.RunToEndXEdit.Enable = 'on';
                 else
-                    msgbox('invalid script download location')
-                    disp('invalid script download location') %TODO: remove
+                    msgbox('invalid script download location', 'Script Debugger')
+                    %disp('invalid script download location') %TODO: remove
                 end
             else
                 disp('Disable Debugging')
                 resp = app.nnp.nmt(7, 'AC'); 
+                pause(0.5);  %This NMT command has a 0.5s delay within the PM, so we need to wait at least 
+                             %that long before sending another request to PM
                 if ~isequal(resp, hex2dec('AC'))
                     confirmNMT = false;
+                    disp(['No Disable NMT Response: ', app.nnp.lastError])
                 else
                     confirmNMT = true;
                 end
                 resp = app.nnp.read(7, '1f52', 1, 'uint8', 2);
                 if length(resp)==2
                     control = resp(1);
-                    disp(control)
                     status = resp(2);
                     if status > 0
                         if status == 22 || status ==23  
-                            msgbox('May not have enabled script debugging ')
+                            msgbox('May not have disabled script debugging ', 'Script Debugging')
                         end
                         if status < length(app.scripterrors)
-                            disp(['Runtime Error: ' app.scripterrors{status+1}])
+                            msgbox(['Runtime Error: ' app.scripterrors{status+1}], 'Script Debugging')
+                            %don't return
                         else
-                            disp(['Unknown Runtime Error: ' num2str(status)])
+                            msgbox(['Unknown Runtime Error: ' num2str(status)], 'Script Debugging')
+                            %don't return
                         end
                     end
                 else
                     if ~confirmNMT
-                        msgbox('Could not confirm NMT')
-                        disp('Could not confirm NMT') %TODO remove
+                        msgbox('Could not disable Script Debugging')
+                        return;
+                        %disp('Could not confirm NMT') %TODO remove
                     end
                 end
-                app.SingleStepButton.Enable = 'off';
+               app.SingleStepButton.Enable = 'off';
                app.RunToLineButton.Enable = 'off';
+               app.RunToEndButton.Enable = 'off';
+               app.RunToEndXEdit.Enable = 'off';
             end
         end %onDebugEnableCheckboxClick
+        
+        function enableButtons(app, enable)
+            app.SingleStepButton.Enable = enable;
+            app.RunToLineButton.Enable = enable;
+            app.RunToEndButton.Enable = enable;
+            app.RunToEndXEdit.Enable = enable;
+            app.ASM.ReassembleButton.Enable = enable;
+            app.ASM.DownloadDebugButton.Enable = enable;
+        end
         
         function showOperandResultValues(app, i_op, currentLine, operands, result)
             %SHOWOPERANDRESULTVALUES
@@ -413,15 +465,24 @@ classdef debugger < handle
             
             %Need to make sure that the NMT command is not retried automatically if it does not get response
             radioSettings = app.nnp.getRadioSettings();
-            if radioSettings.retries > 0 
-                app.nnp.setRadio('Retries', 0)
+            if isempty(radioSettings)
+                msgbox('Failed to read radio settings. Try single step again', 'Script Debugger');
+                return
+            else
+                if radioSettings.retries > 0 
+                    app.nnp.setRadio('Retries', 0)
+                end
             end
 
+            %trigger single step
             resp = app.nnp.nmt(7, 'AD'); 
-            if ~isequal(resp, hex2dec('AC'))
+            if ~isequal(resp, hex2dec('AD'))
                 confirmNMT = false;
             else
                 confirmNMT = true;
+            end
+            if ~confirmNMT 
+                msgbox('Could not confirm single step received.  You may need to Single Step again', 'Script Debugger');
             end
       
             control = 1;
@@ -430,6 +491,7 @@ classdef debugger < handle
             done = false;
             
             while control == 1 && status == 0 % wait until debug step has completed
+                
                 attempt = attempt + 1;
                 if attempt > 10
                     userResp = questdlg('Operation has not completed running. Try again?');
@@ -448,23 +510,24 @@ classdef debugger < handle
 
                     opCodeNamePM = assembler.opcodelist{cell2mat(app.ASM.opcodelist(:,2))==opcodeBytePM,1};
 
-                    fprintf('\ncontrol: 0x%02X, status: 0x%02X, exec: %d, opcode: %d %s\n', ...
+                    if app.verbose > 1 
+                        fprintf('\ncontrol: 0x%02X, status: 0x%02X, exec: %d, opcode: %d %s\n', ...
                         control, status, exec, opcodeBytePM, opCodeNamePM);
+                    end
                 else
                     %error
                     fprintf('\nerror reading control/status\n')
                 end
-                
              end
             
             %Display runtime errors 
             if status > 0 
                 if status < length(app.scripterrors)
                     msgbox(['Runtime Error: ',  app.scripterrors{status+1}])
-                    disp(['Runtime Error: ',  app.scripterrors{status+1}]) %TODO remove
+                    %disp(['Runtime Error: ',  app.scripterrors{status+1}]) %TODO remove
                 else
                     msgbox(['Unknown Runtime Error: ', num2str(status)])
-                    disp(['Unknown Runtime Error: ', num2str(status)]) %TODO remove
+                    %disp(['Unknown Runtime Error: ', num2str(status)]) %TODO remove
                 end
 
                 %disable further debugging
@@ -494,7 +557,9 @@ classdef debugger < handle
                                 scriptBodyAddress, scriptBodyAddress));
                         else
                             currentLine = operation(i_op).line;
-                            fprintf('\ncurrent line %d\n', currentLine); 
+                            if app.verbose > 1
+                                fprintf('\ncurrent line %d\n', currentLine); 
+                            end
 
                             if opcodeBytePM ~= operation(i_op).opCodeByte
                                 if i_op<2
@@ -519,7 +584,9 @@ classdef debugger < handle
                             end
 
                         end
-                        fprintf('\naddress: 0x%08X, opVar0: %d, opVar1: %d, opVar2: %d, opVar3: %d, opVar4: %d, Result: %d, Timer: %d\n', resp);
+                        if app.verbose > 1
+                            fprintf('\naddress: 0x%08X, opVar0: %d, opVar1: %d, opVar2: %d, opVar3: %d, opVar4: %d, Result: %d, Timer: %d\n', resp);
+                        end
                         break; %leave retry loop
                     else
                         %error
@@ -562,7 +629,9 @@ classdef debugger < handle
                     resp = app.nnp.read(7, '1f52', 16, 'uint8'); %read jump value
                     if length(resp) == 1
                         jump = resp;
-                        fprintf('\nJump 0x%02X\n', resp);
+                        if app.verbose > 1
+                            fprintf('\nJump 0x%02X\n', resp);
+                        end
                         break;
                     else
                         %error
@@ -634,14 +703,17 @@ classdef debugger < handle
         function onRunToLineButtonClick(app, src, event)
             %ONRUNTOLINEBUTTONCLICK repeatedly singlesteps until selected line is reached
             
+            app.enableButtons('off');
+            
             disp('Run to Line')
             line = app.ASM.ListBox.Value;
             app.onSingleStepButtonClick(src, event);
-            h = msgbox('May run indefinitely - Hit OK to Cancel');
-            while app.ASM.ListBox.Value~= line && isgraphics(h)
+            h = msgbox('May run indefinitely - Hit OK to Cancel', 'Script Debugger');
+            while app.ASM.ListBox.Value~= line && isgraphics(h) 
                 drawnow
                 app.onSingleStepButtonClick(src, event);
-                if app.ASM.ListBox.Value == length(app.ASM.ListBox.String)
+                if app.DebugEnableCheckbox.Value == false
+                    msgbox('Reached end of script or error before reaching line', 'Script Debugger');
                     break;
                 end
             end
@@ -649,7 +721,53 @@ classdef debugger < handle
                 close(h)
                 delete(h)
             end
+            
+            app.enableButtons('on');
         end   %onRunToLineButtonClick
+        
+        function onRunToEndButtonClick(app, src, event)
+            %ONRUNTOLINEBUTTONCLICK repeatedly singlesteps until last line is reached
+            tic
+            app.enableButtons('off');
+            
+            n = str2double(app.RunToEndXEdit.String);
+            disp(['Run to End ' num2str(n) ' times'])
+
+            %The current method continues where single stepping may have
+            %left off which may not be at the first operation.  
+            %To start from the beginning first disable and reenable debugging
+            
+            h = msgbox('May run indefinitely - Hit OK to Cancel');
+            while n
+                app.onSingleStepButtonClick(src, event);
+               
+                while  isgraphics(h)
+                    drawnow;
+                    app.onSingleStepButtonClick(src, event);
+                    if  app.DebugEnableCheckbox.Value == false %reached end or error
+                        n = n-1;
+                        break;
+                    end
+                end
+                if n
+                    if ~isgraphics(h)
+                        break;
+                    end
+                    app.RunToEndXEdit.String = num2str(n);
+                    app.enableDebug();
+                    drawnow; % needed so first operation shows as highlighted before single stepping
+                    pause(0.5);
+                end
+            end
+            if isgraphics(h)
+                close(h)
+                delete(h)
+            end
+            app.RunToEndXEdit.String ='1'; 
+            toc
+            
+            app.enableButtons('on');
+        end   %onRunToEndButtonClick
     end
     
     methods(Static)

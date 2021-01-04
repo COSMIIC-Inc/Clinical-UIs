@@ -104,10 +104,13 @@ classdef NNPAPI < handle
       
         function flushInput(NNP)
         % FLUSHINPUT - Clears any bytes available in the port buffer
+            %disp(['Bytes available:' num2str(NNP.port.BytesAvailable)])    
             if NNP.port.BytesAvailable
                 buf = NNP.tryfread(NNP.port.BytesAvailable);
                 if NNP.verbose > 0
-                    warning(['Flush Input clearing: ' num2str(buf')]);
+                    fprintf('\nFlush Input clearing: ');
+                    fprintf('%02X ', buf);
+                    fprintf('\n')
                 end
             end
         end
@@ -124,8 +127,13 @@ classdef NNPAPI < handle
         end
         
         function tryfwrite(NNP, data, type)
+            NNP.flushInput();
             try
-                NNP.flushInput();
+                if NNP.verbose == 2
+                    fprintf('\nRequest: ')
+                    fprintf('%02X ', data)
+                    fprintf('\n')
+                end
                 fwrite(NNP.port, data, type);
             catch
                 userResp = questdlg([sprintf('Failed to write data on Access Point port (%s).', NNP.port.Port),...
@@ -140,6 +148,9 @@ classdef NNPAPI < handle
         end
         
         function data = tryfread(NNP, n, type)
+            if nargin<3
+                type = 'uint8';
+            end
             try
                 data = fread(NNP.port, n, type);
             catch
@@ -151,6 +162,9 @@ classdef NNPAPI < handle
 %                 if isequal(userResp, 'Yes')
 %                     NNP.refresh;
 %                 end
+                if NNP.verbose > 0
+                    disp('could not read from serial port')
+                end
                 data = [];
             end
         end
@@ -422,8 +436,9 @@ classdef NNPAPI < handle
                            NNP.lastError = 'PM Internal or CAN error';
 
                         %PM response doesn't match request
-                        %JML TODO: not sure all message types echo these 4 elements!
-                        elseif resp(4)~= protocol || resp(5)~=counter || resp(6)~=netID || resp(7)~=node
+                        %JML TODO: not sure all message types echo these 7 elements!
+                        elseif resp(4)~= protocol || resp(5)~=counter || resp(6)~=netID || resp(7)~=node ||...
+                            resp(8)~=data(1) || resp(9)~=data(2) || resp(10)~=data(3) %OD Index LB, HB, Subindex
                             if NNP.verbose > 0
                                 disp(['PM response does not echo request: ' num2str(resp(1:end-2), ' %02X')])
                             end
@@ -531,7 +546,7 @@ classdef NNPAPI < handle
                          else
                             NNP.LQI = lqiraw;
                              if NNP.verbose > 0
-                                disp(['Bad CRC:' num2str(resp(1:end), ' %02X')]');
+                                disp(['Bad CRC:' num2str(resp(1:end), ' %02X')]);
                              end
                              errOut = 7;
                              NNP.lastError = 'Bad CRC';
