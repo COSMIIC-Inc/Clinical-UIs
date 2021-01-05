@@ -1682,7 +1682,7 @@ classdef NNPAPI < handle
             stacks = double(NNP.read(7, '3030', 1,9,'uint8'));
         end
         function success = saveOD(NNP, node)
-        % success = SAVEOD(NNP)
+        % success = SAVEOD(NNP, node)
         % Save Node's OD
             resp = NNP.nmt(node, '0A');
             success = (resp == hex2dec('0A'));

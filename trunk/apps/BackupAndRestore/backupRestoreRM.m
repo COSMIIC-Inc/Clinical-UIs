@@ -185,7 +185,7 @@ function success =  writeEeprom(nnp, data)
             nnp.lastError
             attempt = attempt + 1;
             if attempt > maxAttempts
-                disp(['failed' num2str(maxApttempts)  'retries'])
+                disp(['failed' num2str(maxAttempts)  'retries'])
                 break 
             else
                 continue %retry
