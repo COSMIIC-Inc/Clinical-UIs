@@ -1,4 +1,4 @@
-function [success, channels, nodes, groups]= readnnpsCNG()
+function [success, channels, nodes, groups] = readnnpsCNG()
 % read the channels, nodes and groups from the nnps file
 % and arrange them in the manner that patternedit app wants
 % success=1 if read correctly.  0 if not
