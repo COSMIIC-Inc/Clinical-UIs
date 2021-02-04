@@ -179,6 +179,7 @@ classdef NNPAPI < handle
             t = tic;
             while NNP.port.BytesAvailable < 10 && toc(t)< NNP.timeout
                 %delay loop
+                drawnow; %allow other callbacks to execute
             end
             if NNP.port.BytesAvailable 
                 resp = NNP.tryfread(NNP.port.BytesAvailable, 'uint8');
@@ -311,6 +312,7 @@ classdef NNPAPI < handle
             t = tic;
             while NNP.port.BytesAvailable < 10 && toc(t)< NNP.timeout
                 %delay loop
+                drawnow; %allow other callbacks to execute
             end
             if NNP.port.BytesAvailable 
                 resp = NNP.tryfread(NNP.port.BytesAvailable, 'uint8');
@@ -341,6 +343,7 @@ classdef NNPAPI < handle
             t = tic;
             while NNP.port.BytesAvailable < 7 && toc(t)< NNP.timeout
                 %delay loop
+                drawnow; %allow other callbacks to execute
             end
             if NNP.port.BytesAvailable 
                 resp = NNP.tryfread(NNP.port.BytesAvailable, 'uint8');
@@ -390,6 +393,7 @@ classdef NNPAPI < handle
             t = tic;
             while NNP.port.BytesAvailable == 0 && toc(t)< NNP.timeout
                 %delay loop
+                drawnow; %allow other callbacks to execute
             end
             if NNP.port.BytesAvailable
                 resp = uint8(NNP.tryfread(NNP.port.BytesAvailable, 'uint8')');
@@ -522,6 +526,7 @@ classdef NNPAPI < handle
             t = tic;
             while NNP.port.BytesAvailable == 0 && toc(t)< NNP.timeout
                 %delay loop
+                drawnow; %allow other callbacks to execute
             end
             if NNP.port.BytesAvailable
                 resp = uint8(NNP.tryfread(NNP.port.BytesAvailable, 'uint8')');
