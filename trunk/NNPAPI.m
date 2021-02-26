@@ -1589,10 +1589,10 @@ classdef NNPAPI < handle
         end
         
         function success = setVNET(NNP, V) 
-        % SETVNET Set PM Network Voltage (in Volts).  Range 4.7-9.5
+        % SETVNET Set PM Network Voltage (in Volts).  Range 4.7-9.6
         % success = SETVNET(NNP, V) 
-            if V < 4.7 || V > 9.5
-                error('Voltage out of range: must be between 4.6 and 9.5V')
+            if V < 4.7 || V > 9.6
+                error('Voltage out of range: must be between 4.7 and 9.6V')
             end
             resp = NNP.write(7, '3010', 0, uint8(V*10), 'uint8'); %VNET
             success = (resp == 0);
