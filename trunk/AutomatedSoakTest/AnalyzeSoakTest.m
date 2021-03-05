@@ -12,7 +12,7 @@ for j=1:length(scantypelist)
     
     files = dir(['Scan' scantypelist{j} '*.mat']);
     f = cell(length(files), 1);
-    for i=[1 6]
+    for i=[length(files)-1 length(files)]
         f{i} = load(files(i).name);
         f{i}.T = datetime(files(i).datenum,'ConvertFrom', 'datenum');
         str = regexp(files(i).name, 'Scan[a-zA-Z]+', 'match');

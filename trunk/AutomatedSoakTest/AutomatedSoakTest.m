@@ -34,16 +34,11 @@ nnp.setSync(50)
 nnp.saveOD(7)
 
 %% Setup Radio
-% r = nnp.getRadioSettings();
-% r.rxTimeout = 50;
-% r.retries = 2;
-% nnp.timeout = 0.2;
-% nnp.setRadioSettings(r);
-
 r = nnp.getRadioSettings();
-r.rxTimeout = 300;
+r.rxTimeout = 100; %don't make less than 80
+   %occasionally PM could respond later than expected resulting in "pm does not echo response" errors
 r.retries = 2;
-nnp.timeout = 1.2;
+nnp.timeout = 0.3;
 nnp.setRadioSettings(r);
 
 
@@ -57,7 +52,7 @@ nodelist = [   3    4   9];
 SNlist =    [1123 1150  1040]; % serial number list by node
 VNETlist = 9.6:-0.1:4.7;
 ScanCount = 10;
-scantypelist = {'App';'StimMin';'StimMax'}; %{'BL';
+scantypelist = {'BL';'App';'StimMin';'StimMax'}; 
 tic
 for i=1:length(scantypelist)
     nodescan(nnp, fid, scantypelist{i}, nodelist, SNlist, VNETlist, ScanCount);
@@ -97,6 +92,8 @@ for vnet = VNET
             fprintf(fid, 'Failed to enter Waiting mode\n');
             fprintf('Failed to enter Waiting mode\n');
             break
+        else
+            fprintf('....retrying enter Waiting mode\n');
         end
     end
     attempt = 0;
@@ -106,6 +103,8 @@ for vnet = VNET
             fprintf(fid, 'Failed to turn off Network\n');
             fprintf('Failed to turn off Network\n');
             break
+        else
+            fprintf('....retrying Network Off\n');
         end
     end
     
@@ -121,6 +120,8 @@ for vnet = VNET
                 fprintf(fid, 'Failed to set VNET\n');
                 fprintf('Failed to set VNET\n');
                 break;
+            else
+                fprintf('....retrying set VNET\n');
             end
         else
             break;
@@ -135,6 +136,8 @@ for vnet = VNET
             fprintf(fid, 'Failed to turn on Network\n');
             fprintf('Failed to turn on Network\n');
             break;
+        else
+            fprintf('....retrying Network On\n');
         end
     end
     pause(0.5);
@@ -198,7 +201,7 @@ for vnet = VNET
     end
     fprintf(fid, 'Getting Power... ');
     fprintf('Getting Power... ');
-    
+
     pause(12); % allow power measurement to stabilize
     
     resp = nnp.getPower();
@@ -238,7 +241,6 @@ for vnet = VNET
     for i=1:X % scan X times
         
         for j = 1:n
-            pause(0.2); %remove this!
             [resp, err] = nnp.transmit(7, uint8([0, 0, node(j), 1, 0]), 0, hex2dec('3c'));
             fprintf(fid, '%3.1f #%3.0f node%1.0f: ', vnet, i, node(j));
             fprintf(fid, '%02X ', resp);
@@ -263,7 +265,6 @@ for vnet = VNET
                             
                             %if in App mode, read VIN
                             if ~isequal(scantype, 'BL')
-                                pause(0.2) %remove this!
                                 resp = double(nnp.read(node(j), '3000', 2, 'uint8'));
                                 if length(resp)==1
                                     vin = resp*3.3/256*4;
@@ -275,7 +276,6 @@ for vnet = VNET
                             
                             %If simulating, check if in compliance
                             if isequal(scantype, 'StimMax')
-                                pause(0.2) %remove this!
                                 resp = double(nnp.read(node(j), '3210', 5, 'uint8'));
                                 if length(resp)==4
                                     fprintf(fid, ' Compliance: %1.0f %1.0f %1.0f %1.0f', resp);
