@@ -360,7 +360,7 @@ classdef NNPAPI < handle
         
         %% Transmit
         
-        function [dataRX, errOut]= transmit(NNP, node, data, counter, protocol)
+        function [dataRX, errOut, errRX]= transmit(NNP, node, data, counter, protocol)
         % TRANSMIT - Sends message to PM following NNP Radio API and returns response
         % [dataRX, errOut]= transmit(NNP, node, data, counter, protocol)
         %
@@ -373,6 +373,7 @@ classdef NNPAPI < handle
         % 6: PM response does not echo request
         % 7: Bad CRC
         
+            errRX = [];
             errOut = 7;
             dataRX = [];
             rssioffset = 74;
@@ -433,6 +434,7 @@ classdef NNPAPI < handle
                     if length(resp) >= 13 
                         %PM flagged response as error message     
                         if resp(7) > 127 
+                           errRX = resp(12:end-2);
                            if NNP.verbose > 0
                                disp(['PM Internal/CAN error: ', num2str(resp(12:end-2),' %02X')]); 
                            end
@@ -1422,8 +1424,36 @@ classdef NNPAPI < handle
                 end
                 %counter = 0;
                 message = [hex2dec('50'), hex2dec('1f'), SP, pktN+2, addrBytes, pktData];
-                [result, err]= NNP.transmit(7, message, counter, hex2dec('A4'));
+                [result, err, errMsg]= NNP.transmit(7, message, counter, hex2dec('A4'));
                 if err
+                    if length(errMsg)==4
+                        switch errMsg(1)
+                            case 2 
+                                str = 'Script Pointer invalid';
+                            case 3
+                                str = 'Script packet too short';
+                            case 4 
+                                str = 'Could not reset script control';
+                            case 5
+                                str = 'Script too big';
+                            case 6 
+                                str = 'Script Packet out of sequence';
+                            case 7
+                                str = 'Could not validate script ID';
+                            case 8 
+                                str = 'Could not set script pointer';
+                            case 9
+                                str = 'Could not load global variables.  Total across scripts may not exceed 400 bytes';
+                            otherwise
+                                str = sprintf('Loadscript error: %02X', errMsg(1));
+                        end
+                        msgbox(str);
+                        NNP.setRadio('Timeout', settings.rxTimeout)
+                        if ~isempty(h) && isvalid(h)
+                            close(h);
+                        end
+                        return
+                    end
                     %disp(NNP.lastError)
                 end
                 if ~isequal(result, [1 0])
