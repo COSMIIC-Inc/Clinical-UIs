@@ -1568,10 +1568,19 @@ classdef NNPAPI < handle
             success = (resp == hex2dec('0C'));
         end
         
-        function success = enterTestFeatures(NNP)
+        function success = enterTestFeatures(NNP, mode)
         %ENTERTESTFEATURES - Enter "Produce X" Mode
         % success = ENTERTESTFEATURES(NNP)
-            resp = NNP.nmt(0, '09'); 
+        % success = ENTERTESTFEATURES(NNP, mode)
+        %     mode = 0: stim values are set in PG 3212.1-4 directly
+        %     mode = 1: stim values are set in PM, PDOs must be mapped
+        %     appropriately
+        %     mode = 2: same as 1 but updates only occur if change has
+            if nargin > 1
+                resp = NNP.nmt(0, '09', mode);
+            else
+                resp = NNP.nmt(0, '09'); 
+            end
             success = (resp == hex2dec('09'));
         end
         
