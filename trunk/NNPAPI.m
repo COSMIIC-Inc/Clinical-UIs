@@ -4,6 +4,7 @@ classdef NNPAPI < handle
     
     properties (Access = private)
         cancelRead = false;
+        mutexAP = false;
     end
     
     properties (Access = public)
@@ -173,7 +174,7 @@ classdef NNPAPI < handle
         function settings = getRadioSettings(NNP)
         % GETRADIOSETTINGS - Reads AccessPoint Radio Settings
             settings = []; %initialize output
-
+            
             NNP.tryfwrite( uint8([255 73 3]), 'uint8');
 
             t = tic;
@@ -373,6 +374,8 @@ classdef NNPAPI < handle
         % 6: PM response does not echo request
         % 7: Bad CRC
         
+
+            
             errRX = [];
             errOut = 7;
             dataRX = [];
@@ -389,6 +392,15 @@ classdef NNPAPI < handle
                 netID = 1;
             end
 
+            if NNP.mutexAP == true
+                errOut = 8;
+                NNP.lastError = 'AP access denied';
+                return
+            end
+            
+            NNP.mutexAP = true; %set mutex to limit simultaneous access from another thread (e.g. timer)
+            % Must clear at each return!
+            
             NNP.tryfwrite(uint8([255, 71, length(data)+7  protocol, counter, netID, node, data]), 'uint8');
 
             t = tic;
@@ -423,6 +435,7 @@ classdef NNPAPI < handle
                              end
                              errOut = 7;
                              NNP.lastError = 'Bad CRC';
+                             NNP.mutexAP = false;
                              return;
                          end
 
@@ -489,6 +502,9 @@ classdef NNPAPI < handle
                 errOut = 5;
                 NNP.lastError = 'USB Timeout';
             end
+            
+            %Clear AP Access Mutex
+            NNP.mutexAP = false;
         
         end
         
