@@ -6,7 +6,7 @@
 %PM Should be running off battery! 
 nnp = NNPAPI;
 %%
-node = [   3    4       9];
+node = [1 2 3];
 n=length(node);
 nnp.setVNET(8);
 nnp.enterWaiting;
@@ -39,7 +39,7 @@ r.rxTimeout = 100; %don't make less than 80
    %occasionally PM could respond later than expected resulting in "pm does not echo response" errors
 r.retries = 2;
 nnp.timeout = 0.3;
-nnp.setRadioSettings(r);
+nnp.setRadioSettings(r)
 
 
 
@@ -48,11 +48,15 @@ fid = fopen(['fullscan_' timestamp '.txt'], 'w');
 fopen(fid);
 % nodelist = [   3    4    5    6    9];
 % SNlist =    [1123 1150  226 1051 1040]; % serial number list by node
-nodelist = [   3    4   9];
-SNlist =    [1123 1150  1040]; % serial number list by node
+nodelist = [1 2 3 4];
+SNlist =  [162 173 167 127 ]; 
+%SNlist =  [258 1121 1040 131]; % serial number list by node
 VNETlist = 9.6:-0.1:4.7;
 ScanCount = 10;
-scantypelist = {'BL';'App';'StimMin';'StimMax'}; 
+scantypelist = {'App'; 'StimMin';'StimMax'};
+%scantypelist = {'StimMax'};
+% scantypelist = {'BL';'App';'StimMin';'StimMax'}; 
+%scantypelist = {'BL';'StimMin';'StimMax'}; 
 tic
 for i=1:length(scantypelist)
     nodescan(nnp, fid, scantypelist{i}, nodelist, SNlist, VNETlist, ScanCount);
@@ -312,8 +316,8 @@ for vnet = VNET
     BLERR = [BLERR; blErr];
     CNT = [CNT; cnt];
     POWER = [POWER; power];
-    VIN = [VIN; nanmean(vinAll)];
-    COMP = [COMP; nanmean(compAll)];
+    VIN = [VIN; mean(vinAll,'omitnan')];
+    COMP = [COMP; mean(compAll,'omitnan')];
     
     resp = double(nnp.read(7, '2500', 1,5, 'uint16'));
     if isempty(resp)

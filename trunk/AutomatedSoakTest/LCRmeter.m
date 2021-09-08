@@ -42,6 +42,15 @@ for i=1:n
     c(i) = b(i,1) + b(i,2)*1i; 
 end
 
+%%
+% C = -1/(2*pi*f*X_C)
+% L = X_L/(2*pi*f)
+
+% X_C = -1/(2*pi*f*C)  %Capacitive Reactance
+% X_L = 2*pi*f*L       %Inductance Reactance
+% X = X_L + X_C        %Total Reactance
+% Z = R + jX
+
 
 %%
 % Loop through the error queue and display all errors
