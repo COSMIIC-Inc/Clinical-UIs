@@ -121,6 +121,7 @@ classdef NNPAPI < handle
             try
                 fclose(NNP.port);
                 fopen(NNP.port);
+                NNP.mutexAP = false;
             catch
                 msgbox(sprintf('Failed to refresh Access Point port (%s).', NNP.port.Port));
                 NNP.lastError = 'Serial Port';
