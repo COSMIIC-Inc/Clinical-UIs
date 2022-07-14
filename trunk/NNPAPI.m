@@ -122,6 +122,7 @@ classdef NNPAPI < handle
                 fclose(NNP.port);
                 fopen(NNP.port);
                 NNP.mutexAP = false;
+                NNP.lastError = [];
             catch
                 msgbox(sprintf('Failed to refresh Access Point port (%s).', NNP.port.Port));
                 NNP.lastError = 'Serial Port';
@@ -171,8 +172,47 @@ classdef NNPAPI < handle
             end
         end
         %% Access Point Radio Settings 
-        
-        function settings = getRadioSettings(NNP)
+        function [ch, rssi] = getClearChannel(NNP, dwell)
+        % GETCLEARCHANNEL - Reads clearest channel.  Dwell time in ms for
+        % each channel (1-255).  ~1ms gap between channels.  Default dwell
+        % = 10ms.  Use >= 10ms for MedRadio Compliance
+            ch = []; %initialize output
+            rssi = [];   
+            if nargin<2
+                dwell=10; 
+            end
+            if dwell <1
+                dwell =1;
+            end
+            if dwell >255
+                dwell =255;
+            end
+            if NNP.timeout<((dwell+1)*10)/1000
+                disp(['NNP serial timeout is too short for specified dwell time.  Use ' num2str(((dwell+1)*10)/1000) 's or higher']);
+            end
+            
+            NNP.tryfwrite( uint8([255 75 4 dwell]), 'uint8');
+
+            t = tic;
+            while NNP.port.BytesAvailable < 5 && toc(t)< NNP.timeout
+                %delay loop
+                drawnow; %allow other callbacks to execute
+            end
+            if NNP.port.BytesAvailable 
+                resp = NNP.tryfread(NNP.port.BytesAvailable, 'uint8');
+                if resp(1)==255 && length(resp)==resp(3) && length(resp)==5 && resp(2) == 6
+                    ch = double(resp(4));
+                    rssi  = double(typecast(uint8(resp(5)), 'int8'));
+                elseif NNP.verbose > 0
+                    disp(['Bad Response from Access Point: ' num2str(resp', ' %02X')]);
+                end
+      
+            elseif NNP.verbose > 0
+               disp('No Response from Access Point');        
+            end
+        end
+
+        function [settings] = getRadioSettings(NNP)
         % GETRADIOSETTINGS - Reads AccessPoint Radio Settings
             settings = []; %initialize output
             
