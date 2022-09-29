@@ -69,7 +69,7 @@ nTags=size(myTagsCh,2);
 % xDoc=xmlread(xmlfile);
 allChan=xDoc.getElementsByTagName('eachChannel');
 numCH=allChan.getLength;
-chCell=cell(numGS,nTags); % create cell array to enter data
+chCell=cell(numCH,nTags); % create cell array to enter data
 % % get the data
 for k=0:allChan.getLength-1  % for each chan - zero based for DOM
     thisListitem = allChan.item(k); %for each groupset, need to parse items
