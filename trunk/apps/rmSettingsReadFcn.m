@@ -22,6 +22,13 @@ StrA=strings;%str = strings returns a string with no characters.
 dstr=datetime('now','TimeZone','local','Format','d-MMM-y HH:mm:ss');
 %StrA=sprintf('\nP%s %s\n',PtID,dstr);
 StrA=sprintf('\n %s\n',dstr);
+% read network voltage
+ % 3010.0, uns8, 0x55, Network Voltage *10
+     resp=double(nnp.read(7,'3010',0,1,'uint8')); % Vnet*10
+    if(length(resp)==1) %valid packet
+       networkVoltage=resp/10;
+       StrA=[StrA sprintf('\nNetwork Voltage %3.1f\n',networkVoltage)];
+     end
 for n=nodes
     % Product code is 1018.2 where 1=CT, 2=PM, 4=PG, 5=BP
     resp=nnp.read(n,'1018',2,1,'uint8');
