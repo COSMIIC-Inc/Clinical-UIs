@@ -1,5 +1,9 @@
 Clinical Suite notes
 Open this to take notes of what I want to change as I work with the suite.
+Need to add window to set the configuration of exclusive mode - 1F57.94
+Currently set that directly from the 1F57 window,
+ADD update labels for the 1F57 read/write window - could update directly from xls window
+
 **General
 
 Use getStatus window from netscanner elsewhere in the suite.
