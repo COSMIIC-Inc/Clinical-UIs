@@ -1,0 +1,41 @@
+Clinical Suite notes
+Open this to take notes of what I want to change as I work with the suite.
+Need to add window to set the configuration of exclusive mode - 1F57.94
+Currently set that directly from the 1F57 window,
+ADD update labels for the 1F57 read/write window - could update directly from xls window
+
+**General
+
+Use getStatus window from netscanner elsewhere in the suite.
+
+**Phone app emulation
+Add battery levels to phone app
+Add network On display to phone app
+Add refresh button
+Add refresh continually button
+Add display of command,pattern, etc.  Since I would be reading the same block as 
+the phone app, might as well set all the same displays that are read in the phone app.
+
+Remote module display
+add sync period to remote module display for reference
+
+**Remote Module Setup
+x Remote module setup, make table editable to be able to set
+
+add accel setting to rmParameters, 2012.1
+add accel setting to remote display for bp>134, PG>164
+How best to rearrange order stim timing PG modules? 
+Swap A and B
+Shift timing R or L?  Just shift SyncTiming and SyncPush
+Is sync period read with BP and/or PG settings?
+Is it ever written or just for reference?
+
+**PDO config
+PDO config - add option to read current configurations and compare
+
+** Netscanner
+x netscannerf.mlapp - need to remove last comma at end of each line, otherwise imported as extra column
+x if VIN not read then need to leave blank
+
+** Needed Parameters
+Include place to set ramp speeds and delays for trunk ramp in pattern configurations
