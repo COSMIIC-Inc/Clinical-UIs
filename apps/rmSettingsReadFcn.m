@@ -24,11 +24,26 @@ dstr=datetime('now','TimeZone','local','Format','d-MMM-y HH:mm:ss');
 StrA=sprintf('\n %s\n',dstr);
 % read network voltage
  % 3010.0, uns8, 0x55, Network Voltage *10
-     resp=double(nnp.read(7,'3010',0,1,'uint8')); % Vnet*10
+    resp=double(nnp.read(7,'3010',0,1,'uint8')); % Vnet*10
     if(length(resp)==1) %valid packet
        networkVoltage=resp/10;
        StrA=[StrA sprintf('\nNetwork Voltage %3.1f\n',networkVoltage)];
-     end
+    end
+    StrA = [StrA sprintf('\n**** PM EMG Config *******\n')];
+    resp=nnp.read(7, '1F57', 5); % D5High
+    if(length(resp)==1) %valid packet
+        D5High = double(resp)*10;
+       StrA=[StrA sprintf('\nD5High \t\t\t\t%d', D5High)];
+    end
+    respL=nnp.read(7, '1F57', 1); % PropOffset
+    if(length(respL)==1) %valid packet
+       StrA=[StrA sprintf('\nEMG Lower Threshold \t%d', respL)];
+    end
+    resp=nnp.read(7, '1F57', 2); % PropUpper
+    if(length(resp)==1) %valid packet
+       PUpper = 255/(double(resp)/10)+respL;
+       StrA=[StrA sprintf('\nEMG Upper Threshold \t%d\n', PUpper)];
+    end
 for n=nodes
     % Product code is 1018.2 where 1=CT, 2=PM, 4=PG, 5=BP
     resp=nnp.read(n,'1018',2,1,'uint8');
