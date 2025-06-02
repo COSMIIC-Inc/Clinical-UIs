@@ -243,11 +243,84 @@ classdef debugger < handle
                 disp('Enable Debugging')
                 
                 app.ASM.ListBox.String = app.ASM.ListBox.UserData;  %Remove Operand/Result Values 
+
+                %Make sure scripts are enabled
+                systemControl = app.nnp.read(7,'2001',1, 'uint32');
+                if length(systemControl)==1
+                    scriptsEnabled = bitget(systemControl,5);
+                    if ~scriptsEnabled
+                        userresp = questdlg('Scripts are not enabled, Enable them now', 'Script Debugging');
+                        if isequal(userresp, 'Yes')
+                            resp = app.nnp.nmt(7, '8e'); %enable scripts
+                            if ~isequal(resp, hex2dec('8e'))
+                                msgbox('Could not confirm scripts enabled ', 'Script Debugging');
+                            end
+                        else
+                            app.DebugEnableCheckbox.Value = false;
+                            return
+                        end
+                    end
+                 else
+                     msgbox('Error reading scripts enabled status', 'Script Debugging');
+                end
+
                 if ismember(app.ASM.scriptP, 1:25) 
-                    %TODO: support PDO/Alarm enabled scripts (Param2=1)? 
-                    % NOTE: Not sure we need to treat them any differently, but CE does, I think so that 
-                    % script is only debugged once PDO/Alarm actually occurs
-                    resp = app.nnp.nmt(7, 'AB', app.ASM.scriptP, 0); 
+                    %The script must be in script order or PDO/Alarm triggered in order to debug
+                    %Get Script Order 
+                    isPDOTriggered = false;
+                    isAlarmTriggered = false;
+                    resp = double(app.nnp.read(7, '1f56', 1, 'uint8'));
+                    if length(resp)==25
+                        if any(resp==app.ASM.scriptP)
+                            %script is in scheduler, debug normally
+                            disp('Debugging as round robin script')
+                        else
+                            %check if script is PDO or Alarm triggered
+                            for i=1:8
+                                resp = double(app.nnp.read(7, ['140' num2str(i-1)], 4, 'uint8'));
+                                if length(resp)==1
+                                    if resp == app.ASM.scriptP
+                                        isPDOTriggered = true;
+                                        disp('Debugging as PDO triggered, script will only start when PDO arrives')
+                                        break;
+                                    end
+                                else
+                                   msgbox('Error reading PDO scripts', 'Script Debugging');
+                                   app.DebugEnableCheckbox.Value = false;
+                                   return
+                                end
+                            end
+                            if ~isPDOTriggered
+                                for i=1:4
+                                    resp = app.nnp.read(7, '2001', 1, 'uint32');
+                                    if length(resp)==1
+                                        sp = double(bitshift(bitand(resp, hex2dec('3E0000')), -17));
+                                        if sp == app.ASM.scriptP
+                                            isAlarmTriggered = true;
+                                            disp('Debugging as Aalrm triggered, script will only start when alarm occurs')
+                                            break;
+                                        end
+                                    else
+                                        msgbox('Error reading alarm scripts', 'Script Debugging');
+                                        app.DebugEnableCheckbox.Value = false;
+                                        return
+                                    end
+                                end
+                            end
+                            if ~(isPDOTriggered || isAlarmTriggered)
+                                msgbox('Script is not in scheduler, and is not PDO Triggered or Alarm Triggered.  Script must be assigned somewhere in order to debug it','Script Debugger')
+                                app.DebugEnableCheckbox.Value = false;
+                                return
+                            end
+                        end
+                    else
+                        msgbox('Error reading script order', 'Script Debugging');
+                        app.DebugEnableCheckbox.Value = false;
+                        return
+                    end
+
+
+                    resp = app.nnp.nmt(7, 'AB', app.ASM.scriptP, isAlarmTriggered||isPDOTriggered); 
                     if ~isequal(resp, hex2dec('AB'))
                         confirmNMT = false;
                         disp(['No Enable NMT Response: ', app.nnp.lastError])
